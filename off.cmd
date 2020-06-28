@@ -1,1 +1,0 @@
-heroku scale web=0 Worker=0 -a discordadam

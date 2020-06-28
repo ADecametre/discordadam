@@ -18,7 +18,7 @@ bot.on('message', message=>{
 		}
 		switch(args[0]){
 			case 'help':
-				let file = [new Discord.MessageAttachment('./images/help.png', 'help.png'), new Discord.MessageAttachment('./images/info.png', 'info.png')];
+				let file = [new Discord.MessageAttachment('./images/help.png', 'help.png'), new Discord.MessageAttachment('./images/info_sm.png', 'info_sm.png')];
 				let mess = new Discord.MessageEmbed()
 					.setColor('#99ff99')
 					.setThumbnail('attachment://help.png')
@@ -27,20 +27,15 @@ bot.on('message', message=>{
 					f.sql("SELECT * FROM `help` WHERE `name`='"+args[1]+"' AND `par` IS NULL")
 						.then(rows=>{
 							if(!f.nll(rows)){
-								mess.setTitle("Aide **‧ `"+v[s].pref+rows[0].name+"`**")
+								mess.setTitle("**Aide ‧ "+v[s].pref+rows[0].name+"**")
 									.setDescription(rows[0].desc);
 								f.sql("SELECT * FROM `help` WHERE `par` LIKE '"+args[1]+"%' ORDER BY `par` ASC")
 									.then(rows2=>{
 										if(!f.nll(rows2)){
 											for(let x=0;x<rows2.length;x++){
-												let name;
-												if(rows2[x].obl=true){
-													name="**__`["+rows2[x].name+"]`__**";
-												}else{
-													name="**__`{"+rows2[x].name+"}`__**";
-												}
+												let name=" "+rows2[x].name;
 												
-												let desc = rows2[x].desc+'\n';
+												let desc = "\u200B"+rows2[x].desc+'\n';
 												if(!f.nll(rows2[x].list)){
 													desc+="*";
 													let s_list=rows2[x].list.split(";");
@@ -53,7 +48,7 @@ bot.on('message', message=>{
 													desc+="*\n";
 												}
 												if(!f.nll(rows2[x].ex)){
-													desc+="*Ex. : ";
+													desc+="\u200B*Ex. : ";
 													let s_ex=rows2[x].ex.split(";");
 													for(let y = 0; y < s_ex.length; y++){
 														desc+=" `"+s_ex[y]+"`"
@@ -75,31 +70,28 @@ bot.on('message', message=>{
 												mess.addField(name, desc, true);
 											}
 										}else{
-											mess.addField('\u200B', '*Aucun paramètre*')
+											mess.addField('\u200B','\u200B',true);
+											mess.addField('*Aucun paramètre*', '\u200B',true);
+											mess.addField('\u200B','\u200B',true);
 										}
 										message.channel.send({ files: [file[0]], embed: mess });
 									})
 							}else{
-								mess.addField('\u200B', ':warning: La fonction *`'+args[1]+'`* n\'existe pas.\n:heavy_minus_sign: *`'+v[s].pref+'help`*')
-								message.channel.send({ files: file, embed: mess });
+								mess.addField('\u200B', ':warning: La fonction *`'+args[1]+'`* n\'existe pas.\n\u200B \u200B \u200B <:help:726511256269226046> *`'+v[s].pref+'help`*')
+								message.channel.send({ files: [file[0]], embed: mess });
 							}
 						})
 				}else{
-					mess.setFooter(v[s].pref+"help {commande}", "attachment://info.png");
+					mess.setFooter(v[s].pref+"help commande", "attachment://help.png");
 					f.sql("SELECT * FROM `help` WHERE `par` IS NULL ORDER BY `name` ASC")
 						.then(rows => {
-							mess.setTitle("Aide");
+							mess.setTitle("__**Aide**__");
 							for(let x = 0; x < rows.length; x++){
-								let name = "";
-								name+=v[s].pref+rows[x].name;
+								let name = "**"+v[s].pref+rows[x].name+"**";
 								f.sql("SELECT * FROM `help` WHERE `par` LIKE '"+rows[x].name+"%' ORDER BY `par` ASC")
 									.then(rows2 => {
 										for(let y = 0; y<rows2.length; y++){
-											if(rows2[y].obl=true){
-												name+=" ["+rows2[y].name+"]";
-											}else{
-												name+=" {"+rows2[y].name+"}";
-											}
+											name += " "+rows2[y].name;
 										}
 										if(x!=0 && x%2==1){
 											mess.addField('\u200B','\u200B',true)
@@ -108,9 +100,9 @@ bot.on('message', message=>{
 											mess.addField('\u200B','\u200B',true);
 											mess.addField('\u200B','\u200B',true);
 										}
-										mess.addField("`"+name+"`",rows[x].sdesc,true);
+										mess.addField(name,"\u200B\u200B "+rows[x].sdesc,true);
 										if(x == rows.length-1){
-											message.channel.send({ files: file, embed: mess });
+											message.channel.send({ files: [file[0]], embed: mess });
 										}
 									});
 							}
@@ -145,14 +137,14 @@ bot.on('message', message=>{
 											});
 									}
 								}else{
-									message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n:heavy_minus_sign: *`"+v[s].pref+"help set`*");
+									message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help set`*");
 								}
 								break;
 							default:
-								message.channel.send(":warning: Le paramètre *`"+args[1]+"`* n'existe pas.\n:heavy_minus_sign: *`"+v[s].pref+"help set`*");
+								message.channel.send(":warning: Le paramètre *`"+args[1]+"`* n'existe pas.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help set`*");
 						}
 					}else{
-						message.channel.send("<:info:725144790915743754> Veuillez préciser le paramètre à modifier.\n:heavy_minus_sign: *`"+v[s].pref+"help set`*");
+						message.channel.send("<:info:725144790915743754> Veuillez préciser le paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help set`*");
 					}
 				}else{
 					message.channel.send(':warning: Vous n\'avez pas la permission de modifier les paramètres.');
@@ -171,7 +163,7 @@ bot.on('message', message=>{
 							});
 					}
 				}else{
-					message.channel.send("<:info:725144790915743754> Veuillez indiquer votre suggestion.\n:heavy_minus_sign: *`"+v[s].pref+"help suggest`*");
+					message.channel.send("<:info:725144790915743754> Veuillez indiquer votre suggestion.\n\u200B \u200B \u200B *`"+v[s].pref+"help suggest`*");
 				}
 				break;
 			case 'about':
@@ -217,9 +209,28 @@ bot.on('message', message=>{
 						}else if(!f.nll(rows[0])){
 							bot.users.fetch(process.env.moderator).then(mod => {
 								bot.users.fetch(process.env.bot).then(bot => {
+									const momFormat = require("moment-duration-format");
+									momFormat(moment);
+									let d_diff = moment.duration( moment(d,"DD/MM/YY HH:mm").diff(moment(rows[0].date,"DD/MM/YY HH:mm")) );
+									let d_form;
+									if(d_diff.format("M").replace(/,/g, "") >= 6){
+										d_form = rows[0].date.substr(0,6)+"20"+rows[0].date.substr(6,2);
+									}else if(d_diff.format("d").replace(/,/g, "") >= 7){
+										var month = ["janv.", "fév.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
+										d_form = parseInt( rows[0].date.substr(0,2) ) + " " + month[ parseInt(rows[0].date.substr(3,2)) - 1 ]
+									}else if(d_diff.format("h").replace(/,/g, "") >= 24){
+										d_form = d_diff.format("d") + "j"
+									}else if(d_diff.format("m").replace(/,/g, "") >= 60){
+										d_form = d_diff.format("h") + "h"
+									}else if(d_diff.format("s").replace(/,/g, "") >= 60){
+										d_form = d_diff.format("m") + " min"
+									}else if(d_diff.format("s").replace(/,/g, "") < 60){
+										d_form = "Quelq. sec."
+									}
+
 									let mess = new Discord.MessageEmbed()
 										.setColor('#99ff99')
-										.setTitle('Version ' + rows[0].id.substr(0, f.getPos(rows[0].id, '.', fv+fv1)))
+										.setTitle('Version ' + rows[0].id.substr(0, f.getPos(rows[0].id, '.', fv+fv1)) + " ‧ *" + d_form + "*")
 										.setURL()
 										.setAuthor(bot.username, null, 'http://a-decametre.tk')
 										.setDescription(rows[0].info)
@@ -247,7 +258,7 @@ bot.on('message', message=>{
 								});
 							});
 						}else{
-							message.channel.send(':warning: La version *`'+args[1]+'`* n\'existe pas.\n:heavy_minus_sign: *`'+v[s].pref+'about`*');
+							message.channel.send(':warning: La version *`'+args[1]+'`* n\'existe pas.\n\u200B \u200B \u200B <:help:726511256269226046> *`'+v[s].pref+'about`*');
 						}
 					})
 					.catch(err => {

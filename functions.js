@@ -66,10 +66,10 @@ err_rep:(place,err)=>{
 },
 sql:async (sql)=>{
   return new Promise((resolve, reject) => {
-  con.query(sql, function (err, rows, fields) {
-    if (err) module.exports.err_rep("sql-query",err).then(value=>{resolve(value);});
-    resolve(rows);
-  });
+    con.query(sql, function (err, rows, fields) {
+      if (err) module.exports.err_rep("sql-query",err).then(value=>{resolve(value);});
+      resolve(rows);
+    });
   });
 },
 getPos : (string, subString, index) => string.split(subString, index).join(subString).length,
@@ -77,20 +77,31 @@ getNum : string => { if(string.match(/\d+/g)){return parseInt(string.match(/\d+/
 
 };
 
-// mySQL connection
   const mysql = require('mysql');
-  var con = mysql.createConnection({
-    host: process.env.sql_host,
-    user: process.env.sql_user,
-    password: process.env.sql_password,
-    database: process.env.sql_user
-  });
-  con.connect(err => {
-    if (err){
-      if(err.stack.includes('ER_TOO_MANY_USER_CONNECTIONS')){
-        resolve(':confused:\nImpossible de se connecter.\nRéessayez dans quelques instants.');
-      }else{
+  function sql_con() {
+    con = mysql.createConnection({
+      host: process.env.sql_host,
+      user: process.env.sql_user,
+      password: process.env.sql_password,
+      database: process.env.sql_user
+    });
+
+    con.connect(function(err) {
+      if(err) {
+        console.log('Error when connecting to DB : ', err);
+        setTimeout(sql_con, 2000);
+      }
+      console.log("Reconnecting to DB.");
+    });
+    
+    con.on('error', function(err) {
+      console.log('DB error : ', err);
+      if(err.code === 'PROTOCOL_CONNECTION_LOST') {
+        sql_con();
+      } else {
         module.exports.err_rep("sql-connect",err).then(value=>{resolve(value);});
       }
-    };
-  });
+    });
+  }
+
+  sql_con();

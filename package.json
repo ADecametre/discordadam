@@ -11,10 +11,11 @@
   "dependencies": {
     "discord.js": "^12.2.0",
     "line-by-line": "^0.1.6",
-    "mysql": ">=2.5.0",
-    "request-promise": "",
-    "request": "",
-    "moment-timezone": "",
-    "randomstring": ""
+    "mysql": "2.18.1",
+    "request-promise": "4.2.5",
+    "request": "2.88.2",
+    "moment-timezone": "0.5.31",
+    "randomstring": "1.1.5",
+    "moment-duration-format": "2.3.2"
   }
 }
