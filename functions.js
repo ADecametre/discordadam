@@ -73,7 +73,10 @@ sql:async (sql)=>{
   });
 },
 getPos : (string, subString, index) => string.split(subString, index).join(subString).length,
-getNum : string => { if(string.match(/\d+/g)){return parseInt(string.match(/\d+/g).map(Number).join(""))}else{ return null; } }
+getNum : string => { if(string.match(/\d+/g)){return parseInt(string.match(/\d+/g).map(Number).join(""))}else{ return null; } },
+abv_month : [undefined,"janv.", "fév.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."],
+alph : [undefined,"a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z"],
+e_alph : [undefined,"🇦","🇧","🇨","🇩","🇪","🇫","🇬","🇭","🇮","🇯","🇰","🇱","🇲","🇳","🇴","🇵","🇶","🇷","🇸","🇹","🇺","🇻","🇼","🇽","🇾","🇿"]
 
 };
 

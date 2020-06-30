@@ -96,11 +96,11 @@ bot.on('message', message=>{
 										if(x!=0 && x%2==1){
 											mess.addField('\u200B','\u200B',true)
 										}
+										mess.addField(name,"\u200B\u200B "+rows[x].sdesc,true);
 										if(x == rows.length-1 && x%2==0){
 											mess.addField('\u200B','\u200B',true);
 											mess.addField('\u200B','\u200B',true);
 										}
-										mess.addField(name,"\u200B\u200B "+rows[x].sdesc,true);
 										if(x == rows.length-1){
 											message.channel.send({ files: [file[0]], embed: mess });
 										}
@@ -216,8 +216,7 @@ bot.on('message', message=>{
 									if(d_diff.format("M").replace(/,/g, "") >= 6){
 										d_form = rows[0].date.substr(0,6)+"20"+rows[0].date.substr(6,2);
 									}else if(d_diff.format("d").replace(/,/g, "") >= 7){
-										var month = ["janv.", "fév.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
-										d_form = parseInt( rows[0].date.substr(0,2) ) + " " + month[ parseInt(rows[0].date.substr(3,2)) - 1 ]
+										d_form = parseInt( rows[0].date.substr(0,2) ) + " " + f.abv_month[ parseInt(rows[0].date.substr(3,2)) ]
 									}else if(d_diff.format("h").replace(/,/g, "") >= 24){
 										d_form = d_diff.format("d") + "j"
 									}else if(d_diff.format("m").replace(/,/g, "") >= 60){
@@ -247,9 +246,25 @@ bot.on('message', message=>{
 										.setFooter(mod.username+'#'+mod.discriminator+'\n', mod.avatarURL());
 
 									for(let x = rows.length-1;x>0;x--){
+										momFormat(moment);
+										let d_diff = moment.duration( moment(d,"DD/MM/YY HH:mm").diff(moment(rows[x].date,"DD/MM/YY HH:mm")) );
+										let d_form;
+										if(d_diff.format("M").replace(/,/g, "") >= 6){
+											d_form = rows[0].date.substr(0,6)+"20"+rows[0].date.substr(6,2);
+										}else if(d_diff.format("d").replace(/,/g, "") >= 7){
+											d_form = parseInt( rows[0].date.substr(0,2) ) + " " + f.abv_month[ parseInt(rows[0].date.substr(3,2)) ]
+										}else if(d_diff.format("h").replace(/,/g, "") >= 24){
+											d_form = d_diff.format("d") + "j"
+										}else if(d_diff.format("m").replace(/,/g, "") >= 60){
+											d_form = d_diff.format("h") + "h"
+										}else if(d_diff.format("s").replace(/,/g, "") >= 60){
+											d_form = d_diff.format("m") + " min"
+										}else if(d_diff.format("s").replace(/,/g, "") < 60){
+											d_form = "Quelq. sec."
+										}
 										mess.addFields(
 											{ name: '\u200B', value: '\u200B', inline: true },
-											{ name: '.'+rows[x].id.split('.')[fv], value: rows[x].info, inline: true },
+											{ name: '.'+rows[x].id.split('.')[fv] + " ‧ *" + d_form + "*", value: rows[x].info, inline: true },
 											{ name: '\u200B', value: '\u200B', inline: true }
 										);
 									}
@@ -264,6 +279,61 @@ bot.on('message', message=>{
 					.catch(err => {
 						f.err_rep("about-req",err).then(value=>{message.channel.send(value);});
 					});
+				break;
+			case "poll":
+				message.fetch({limit:1}).then(msg=>{ setTimeout(()=>{msg.delete();return;},10000); });
+				let mess2 = new Discord.MessageEmbed()
+					.setColor('#99ff99')
+					.setAuthor(message.author.username+'#'+message.author.discriminator+'\n', message.author.avatarURL());
+
+				let str = larg(1);
+				let char;
+				let e = false;
+
+				for( let x = 0; true; x++ ){
+					if(x == 0){
+						char = ["{","}"];
+					}
+					let op = str.indexOf(char[0]);
+					let clo = str.indexOf(char[1]);
+					let sub = str.substring(op+1,clo);
+
+					if( op != -1 && clo != -1 ){
+						if(!f.nll(sub)){
+							if(x == 0){
+								mess2.setTitle(sub);
+								char = ["[","]"];
+							}else{
+								mess2.addField(":regional_indicator_"+f.alph[x]+": "+sub, '\u200B', true);
+							}
+						}else{
+							e = true;
+							if(x == 0){
+								message.channel.send(":warning: Le titre ne peut pas être vide.").then(msg2=>setTimeout(()=>{msg2.delete()},5000));
+							}else{
+								message.channel.send(":warning: Les options ne peuvent pas être vides.").then(msg2=>setTimeout(()=>{msg2.delete()},5000));
+							}
+						}
+					}else{
+						if(e == false){
+							if(x <= 2){
+								message.channel.send("<:info:725144790915743754> Veuillez indiquer un titre et au moins deux options.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help poll`*").then(msg2=>setTimeout(()=>{msg2.delete()},5000));
+							}else if(x > 20){
+								message.channel.send(":warning: Il ne peut pas y avoir plus de 20 options.").then(msg2=>setTimeout(()=>{msg2.delete()},5000));
+							}else{
+								message.channel.send(mess2).then(sentEmbed => {
+									for( y = 1; y < x; y++ ){
+										sentEmbed.react(f.e_alph[y]);
+									}
+								});
+							}
+						}
+						break;
+					}
+
+					str = str.substring(clo+1);
+					
+				}
 				break;
 		}
 	}
