@@ -76,7 +76,9 @@ getPos : (string, subString, index) => string.split(subString, index).join(subSt
 getNum : string => { if(string.match(/\d+/g)){return parseInt(string.match(/\d+/g).map(Number).join(""))}else{ return null; } },
 abv_month : [undefined,"janv.", "fév.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."],
 alph : [undefined,"a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z"],
-e_alph : [undefined,"🇦","🇧","🇨","🇩","🇪","🇫","🇬","🇭","🇮","🇯","🇰","🇱","🇲","🇳","🇴","🇵","🇶","🇷","🇸","🇹","🇺","🇻","🇼","🇽","🇾","🇿"]
+e_alph : [undefined,"🇦","🇧","🇨","🇩","🇪","🇫","🇬","🇭","🇮","🇯","🇰","🇱","🇲","🇳","🇴","🇵","🇶","🇷","🇸","🇹","🇺","🇻","🇼","🇽","🇾","🇿"],
+u_mention : mention => mention.match(/^<@!?(\d+)>$/) || [false],
+c_mention : mention => mention.match(/^<#(\d+)>$/) || [false],
 
 };
 
@@ -86,7 +88,8 @@ e_alph : [undefined,"🇦","🇧","🇨","🇩","🇪","🇫","🇬","🇭","�
       host: process.env.sql_host,
       user: process.env.sql_user,
       password: process.env.sql_password,
-      database: process.env.sql_user
+      database: process.env.sql_user,
+      charset : 'utf8mb4_unicode_ci'
     });
 
     con.connect(function(err) {

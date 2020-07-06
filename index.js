@@ -4,9 +4,57 @@ const bot = new Discord.Client();
 const f = require('./functions.js');
 const req = require('request-promise');
 const { resolve } = require('path');
+const moment = require('moment-timezone');
+const momFormat = require("moment-duration-format");
 //const { sql } = require('./functions.js');
 // var requireWithoutCache = require('require-without-cache');
 // f.rfile('./cache/prefix.txt').then(data=>{console.log('H:'+data);global.pref = data;});
+
+setInterval(() => {
+	console.log("Checking interval started");
+
+	let d=moment().tz("America/Toronto").format("DD/MM");
+	momFormat(moment);
+	let h=moment().tz("America/Toronto").format("HH:mm");
+	f.sql("SELECT `uid`, `server` FROM `bday` WHERE `done` = 0 && `date` LIKE '"+d+"%'")
+		.then(rows => {
+			if(rows[0]){
+										for (let x = 0; x < rows.length; x++) {
+				// f.sql("SELECT `bday_channel`, `bday_hour`, `bday_message` FROM `vars` WHERE `server` = '"+rows[x].server+"'")
+					// .then(rows2 => {
+						if(v[rows[x].server]){
+							let d_diff = moment.duration( moment(h,"HH:mm").diff(moment(v[rows[x].server].bday_hour,"HH:mm")) ).format("m").replace(/,/g, "");
+
+							if (-5 <= d_diff && d_diff <= 55) {
+								let gu = bot.guilds.cache.find(guild => guild.id == rows[x].server) || null;
+								if(gu){
+									let ch = gu.channels.cache.find(channel => channel.id == v[rows[x].server].bday_channel) || null;
+									if (ch) {
+											f.sql("UPDATE `bday` SET `done`=1 WHERE `uid`='"+rows[x].uid+"' AND `server`='"+rows[x].server+"'")
+												.then(()=>{
+													ch.send(v[rows[x].server].bday_message.replace(/<@someone>/g,"<@!"+rows[x].uid+">"));
+												})
+									}
+								}
+							}
+						}
+					// })
+										}
+			}
+		});
+		f.sql("SELECT `uid`, `server`, `date` FROM `bday` WHERE `done` = 1")
+			.then(rows => {
+				if(rows[0]){
+					for (let x = 0; x < rows.length; x++) {
+						let d_diff = moment.duration( moment(d,"DD/MM").diff(moment(rows[x].date,"DD/MM")) ).format("d").replace(/,/g, "");
+						if (d_diff >= 1) {
+							f.sql("UPDATE `bday` SET `done`=0 WHERE `uid`='"+rows[x].uid+"' AND `server`='"+rows[x].server+"'")
+						}
+					}
+				}
+				
+			});
+}, 10*60*1000);
 
 bot.on('message', message=>{
 	let s = message.guild.id;
@@ -127,7 +175,7 @@ bot.on('message', message=>{
 						switch(args[1]){
 							case 'prefix':
 								if(!f.nll(args[2])){
-									if(args[2].length>10){
+									if(larg(2).length>10){
 										message.channel.send(":warning: Le préfix ne peut pas être plus long que 10 caractères.")
 									}else{
 										f.sql("UPDATE `vars` SET `pref`='"+larg(2)+"' WHERE `server`='"+s+"'")
@@ -135,6 +183,70 @@ bot.on('message', message=>{
 												message.channel.send(":white_check_mark: Préfix changé à *`"+larg(2)+"`*.");
 												global.v[s].pref=larg(2);
 											});
+									}
+								}else{
+									message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help set`*");
+								}
+								break;
+							case 'bday_hour':
+								if(!f.nll(args[2])){
+									if(!larg(2).toString ().match (/^([01]\d|2[0-3])(:)([0-5]\d)$/)){
+										message.channel.send(":warning: Veuillez entrer l'heure sous le format `HH:MM` (24h).")
+									}else{
+										f.sql("UPDATE `vars` SET `bday_hour`='"+larg(2)+"' WHERE `server`='"+s+"'")
+											.then(()=>{
+												message.channel.send(":white_check_mark: Heure d'anniversaire changé à *`"+larg(2)+"`*.");
+												global.v[s].bday_hour=larg(2);
+											});
+									}
+								}else{
+									message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help set`*");
+								}
+								break;
+							case 'bday_channel':
+								if(!f.nll(args[2])){
+									if( message.guild.channels.cache.find(channel => channel.id == f.c_mention(args[2])[1]) ){
+										f.sql("UPDATE `vars` SET `bday_channel`='"+f.c_mention(args[2])[1]+"' WHERE `server`='"+s+"'")
+										.then(()=>{
+											message.channel.send(":white_check_mark: Salon changé à "+args[2]+".");
+											global.v[s].bday_channel=f.c_mention(args[2])[1];
+										});
+									}else if( message.guild.channels.cache.find(channel => channel.name == args[2]) ){
+										let ch = message.guild.channels.cache.find(channel => channel.name == args[2])
+										f.sql("UPDATE `vars` SET `bday_channel`='"+ch.id+"' WHERE `server`='"+s+"'")
+											.then(()=>{
+												message.channel.send(":white_check_mark: Salon changé à <#"+ch.id+">.");
+												global.v[s].bday_channel=ch.id;
+											});
+									}else{
+										message.channel.send(":warning: Nom de salon invalide.")
+									}
+									
+								}else{
+									message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help set`*");
+								}
+								break;
+							case 'bday_message':
+								if(!f.nll(args[2])){
+									if(larg(2).length <= 500){
+										if(args[2] == "default"){
+											f.sql("UPDATE `vars` SET `bday_message`=DEFAULT(`bday_message`) WHERE `server`='"+s+"'")
+												.then(()=>{
+													f.sql("SELECT DEFAULT(`bday_message`) AS `default` FROM `vars`")
+														.then(rows => {
+															message.channel.send(":white_check_mark: Message d'anniversaire modifié.");
+															global.v[s].bday_message = rows[0].default;
+														});
+												});
+										}else{
+											f.sql("UPDATE `vars` SET `bday_message`='"+larg(2).replace(/'/g,"\\'")+"' WHERE `server`='"+s+"'")
+												.then(()=>{
+													message.channel.send(":white_check_mark: Message d'anniversaire modifié.");
+													global.v[s].bday_message=larg(2);
+												});
+										}
+									}else{
+										message.channel.send(":warning: Le message ne peut pas être plus long que 500 caractères.")
 									}
 								}else{
 									message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help set`*");
@@ -155,8 +267,8 @@ bot.on('message', message=>{
 					if(args[1].length>1000){
 						message.channel.send(":warning: La suggestion ne peut pas être plus longue que 1000 caractères.")
 					}else{
-						var moment = require('moment-timezone');
-						d=moment().tz("America/Toronto").format("DD/MM/YY HH:mm:ss");
+						// var moment = require('moment-timezone');
+						let d=moment().tz("America/Toronto").format("DD/MM/YY HH:mm:ss");
 						f.sql("INSERT INTO `suggest`(`name`, `uid`, `date`, `sug`) VALUES ('"+message.member.user.tag+"','"+message.member.id+"','"+d+"','"+larg(1)+"')")
 							.then(()=>{
 								message.channel.send(":white_check_mark: Suggestion envoyée à <@!"+process.env.moderator+">.");
@@ -167,8 +279,8 @@ bot.on('message', message=>{
 				}
 				break;
 			case 'about':
-				var moment = require('moment-timezone');
-				d=moment().tz("America/Toronto").format("DD/MM/YY HH:mm");
+				// var moment = require('moment-timezone');
+				let d=moment().tz("America/Toronto").format("DD/MM/YY HH:mm");
 
 				let nv = new Array;
 				if(f.nll(args[1])){
@@ -209,7 +321,6 @@ bot.on('message', message=>{
 						}else if(!f.nll(rows[0])){
 							bot.users.fetch(process.env.moderator).then(mod => {
 								bot.users.fetch(process.env.bot).then(bot => {
-									const momFormat = require("moment-duration-format");
 									momFormat(moment);
 									let d_diff = moment.duration( moment(d,"DD/MM/YY HH:mm").diff(moment(rows[0].date,"DD/MM/YY HH:mm")) );
 									let d_form;
@@ -280,7 +391,7 @@ bot.on('message', message=>{
 						f.err_rep("about-req",err).then(value=>{message.channel.send(value);});
 					});
 				break;
-			case "poll":
+			case 'poll':
 				message.fetch({limit:1}).then(msg=>{ setTimeout(()=>{msg.delete();return;},10000); });
 				let mess2 = new Discord.MessageEmbed()
 					.setColor('#99ff99')
@@ -333,6 +444,74 @@ bot.on('message', message=>{
 
 					str = str.substring(clo+1);
 					
+				}
+				break;
+			case 'bday':
+				if(!f.nll(v[s].bday_channel)){
+					if(!f.nll(args[1])){
+						if(f.nll(args[2])){
+							args[2] = args[1];
+							args[1] = '<@!'+message.member.id+'>';
+						}
+						if(!f.nll(args[2])){
+							let mem = message.guild.members.cache.find(member => member.id == f.u_mention(args[1])[1] || member.user.username == args[1].replace(/([^\\])(_)/g,'$1 ').replace(/\\/g,'') || member.nickname == args[1].replace(/([^\\])(_)/g,'$1 ').replace(/\\/g,'')) || null;
+							if (mem){
+								// if(args[2].match(/^(0[1-9]|[1-2]\d|3[0-1])(\/)(0[1-9]|1[0-2])((\/)(19\d\d|20\d\d))?$/)){
+								// var moment = require('moment-timezone');
+								if(args[2].match(/^(0[1-9]|[1-2]\d|3[0-1])(\/)(0[1-9]|1[0-2])((\/)(19\d\d|20\d\d))?$/) && moment(args[2], "DD/MM/YYYY").isValid()){
+									f.sql("SELECT COUNT(*) AS cnt FROM `bday` WHERE `server`='"+s+"' && `uid`='"+mem.id+"'")
+										.then(rows => {
+											if(rows[0].cnt > 0){
+												if(message.member.id == mem.id || message.member.id==process.env.moderator || message.member.hasPermission("ADMINISTRATOR")){
+													f.sql("UPDATE `bday` SET `uid` = '"+mem.id+"', `server` = '"+message.guild.id+"', `date` = '"+args[2]+"', `done` = 0 WHERE `uid` = '"+mem.id+"' && `server`='"+s+"'")
+														.then(()=>{
+															nme = mem.nickname || mem.user.username; 
+															message.channel.send(":white_check_mark: Anniversaire modifié (*`"+nme+"`* - *`"+args[2]+"`*).");
+														});
+												}else{
+													message.channel.send(':warning: Vous n\'avez pas la permission de modifier l\'anniversaire.');
+												}
+											}else{
+												f.sql("INSERT INTO `bday` (`uid`, `server`, `date`, `done`) VALUES ('"+mem.id+"', '"+message.guild.id+"', '"+args[2]+"', 0);")
+													.then(()=>{
+														nme = mem.nickname || mem.user.username; 
+														message.channel.send(":white_check_mark: Anniversaire ajouté (*`"+nme+"`* - *`"+args[2]+"`*).");
+													});
+											}
+										});
+								}else if(args[2] == 'delete'){
+									f.sql("SELECT COUNT(*) AS cnt FROM `bday` WHERE `server`='"+s+"' && `uid`='"+mem.id+"'")
+										.then(rows => {
+											if(rows[0].cnt > 0){
+												if(message.member.id == mem.id || message.member.id==process.env.moderator || message.member.hasPermission("ADMINISTRATOR")){
+													f.sql("DELETE FROM `bday` WHERE `uid` = '"+mem.id+"' && `server` = '"+s+"'")
+														.then(()=>{
+															nme = mem.nickname || mem.user.username; 
+															message.channel.send(":white_check_mark: Anniversaire supprimé (*`"+nme+"`*).");
+														});
+												}else{
+													message.channel.send(':warning: Vous n\'avez pas la permission de modifier l\'anniversaire.');
+												}
+											}else{
+												nme = mem.nickname || mem.user.username; 
+												message.channel.send("<:info:725144790915743754> Aucun anniversaire enregistré (*`"+nme+"`*).");
+											}
+										});
+									
+								}else{
+									message.channel.send(":warning: Veuillez indiquer votre date sous le format `JJ/MM` ou `JJ/MM/AAAA`.");
+								}
+							}else{
+								message.channel.send(":warning: Nom d'utilisateur incorrect.");
+							}
+						}else{
+							message.channel.send("<:info:725144790915743754> Veuillez préciser la date de naissance.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help bday`*");
+						}
+					}else{
+						message.channel.send("<:info:725144790915743754> Veuillez préciser l'utilisateur ou la date de naissance.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help bday`*");
+					}
+				}else{
+					message.channel.send("<:info:725144790915743754> Aucun salon d'affichage défini par les modérateurs.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"set bday_channel [salon]`*")
 				}
 				break;
 		}
