@@ -79,6 +79,25 @@ alph : [undefined,"a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p
 e_alph : [undefined,"🇦","🇧","🇨","🇩","🇪","🇫","🇬","🇭","🇮","🇯","🇰","🇱","🇲","🇳","🇴","🇵","🇶","🇷","🇸","🇹","🇺","🇻","🇼","🇽","🇾","🇿"],
 u_mention : mention => mention.match(/^<@!?(\d+)>$/) || [false],
 c_mention : mention => mention.match(/^<#(\d+)>$/) || [false],
+mark : (pref, chars=null) => {
+  let mess = pref;
+  if(!chars || chars == '`'){
+    mess = mess.replace(/^`/g, ' `').replace(/`$/g, '` ');
+    if(mess.match(/``/g)){
+      mess = '`'+mess+'`';
+    }else{
+      mess = '``'+mess+'``';
+    }
+  }
+  if(!chars || chars == '*'){
+    if(mess.match(/\*/g)){
+      mess = '_'+mess+'_';
+    }else{
+      mess = '*'+mess+'*';
+    }
+  }
+  return mess;
+},
 
 };
 

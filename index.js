@@ -10,59 +10,31 @@ const momFormat = require("moment-duration-format");
 // var requireWithoutCache = require('require-without-cache');
 // f.rfile('./cache/prefix.txt').then(data=>{console.log('H:'+data);global.pref = data;});
 
-setInterval(() => {
-	console.log("Checking interval started");
-
-	let d=moment().tz("America/Toronto").format("DD/MM");
-	momFormat(moment);
-	let h=moment().tz("America/Toronto").format("HH:mm");
-	f.sql("SELECT `uid`, `server` FROM `bday` WHERE `done` = 0 && `date` LIKE '"+d+"%'")
-		.then(rows => {
-			if(rows[0]){
-										for (let x = 0; x < rows.length; x++) {
-				// f.sql("SELECT `bday_channel`, `bday_hour`, `bday_message` FROM `vars` WHERE `server` = '"+rows[x].server+"'")
-					// .then(rows2 => {
-						if(v[rows[x].server]){
-							let d_diff = moment.duration( moment(h,"HH:mm").diff(moment(v[rows[x].server].bday_hour,"HH:mm")) ).format("m").replace(/,/g, "");
-
-							if (-5 <= d_diff && d_diff <= 55) {
-								let gu = bot.guilds.cache.find(guild => guild.id == rows[x].server) || null;
-								if(gu){
-									let ch = gu.channels.cache.find(channel => channel.id == v[rows[x].server].bday_channel) || null;
-									if (ch) {
-											f.sql("UPDATE `bday` SET `done`=1 WHERE `uid`='"+rows[x].uid+"' AND `server`='"+rows[x].server+"'")
-												.then(()=>{
-													ch.send(v[rows[x].server].bday_message.replace(/<@someone>/g,"<@!"+rows[x].uid+">"));
-												})
-									}
-								}
-							}
-						}
-					// })
-										}
-			}
-		});
-		f.sql("SELECT `uid`, `server`, `date` FROM `bday` WHERE `done` = 1")
-			.then(rows => {
-				if(rows[0]){
-					for (let x = 0; x < rows.length; x++) {
-						let d_diff = moment.duration( moment(d,"DD/MM").diff(moment(rows[x].date,"DD/MM")) ).format("d").replace(/,/g, "");
-						if (d_diff >= 1) {
-							f.sql("UPDATE `bday` SET `done`=0 WHERE `uid`='"+rows[x].uid+"' AND `server`='"+rows[x].server+"'")
-						}
-					}
-				}
-				
-			});
-}, 10*60*1000);
+sync();
+setInterval(sync, 10*60*1000);
 
 bot.on('message', message=>{
 	let s = message.guild.id;
 	if(!f.nll(v[s])){
-		let args=message.content.substring(v[s].pref.length).replace(/'/g, "\\'").split(" ");
-		let larg=pre=>{return message.content.substring(message.content.indexOf(args[pre]))}
-		if(message.content.includes(process.env.bot)){
+		let args;
+		if(message.content == '<@!'+process.env.bot+'>'){
 			args = ['help'];
+		}else if(message.content == 'Passionnant.' || message.content == 'Passionnément passionnant.'){
+			args = ['passion'];
+		}else if(message.content.startsWith(v[s].pref)){
+			args = message.content.substring(v[s].pref.length).replace(/'/g, "\\'").split(" ");
+		}else{
+			return;
+		}
+		let larg = pre => {
+			let ret = '';
+			for(let x = pre ; x < args.length ; x++){
+				ret += args[x];
+				if(x != args.length-1){
+					ret += ' ';
+				}
+			}
+			return ret;
 		}
 		switch(args[0]){
 			case 'help':
@@ -71,17 +43,19 @@ bot.on('message', message=>{
 					.setColor('#99ff99')
 					.setThumbnail('attachment://help.png')
 				
-				if(!f.nll(args[1])){
-					f.sql("SELECT * FROM `help` WHERE `name`='"+args[1]+"' AND `par` IS NULL")
+				if(!f.nll(args[2])){
+					f.sql("SELECT * FROM `help` WHERE `name`='"+larg(1)+"' AND `par` IS NULL AND `sect` IS NULL")
 						.then(rows=>{
 							if(!f.nll(rows)){
-								mess.setTitle("**Aide ‧ "+v[s].pref+rows[0].name+"**")
+								let title = "**Aide ‧ "+v[s].pref.replace(/\*\*/,'\\**')+rows[0].name+"**";
+								mess // .setTitle("**Aide ‧ "+v[s].pref.replace(/\*\*/,'\\**')+rows[0].name+"**")
 									.setDescription(rows[0].desc);
-								f.sql("SELECT * FROM `help` WHERE `par` LIKE '"+args[1]+"%' ORDER BY `par` ASC")
+								f.sql("SELECT * FROM `help` WHERE `par` LIKE '"+larg(1)+"-%' ORDER BY `par` ASC")
 									.then(rows2=>{
 										if(!f.nll(rows2)){
 											for(let x=0;x<rows2.length;x++){
 												let name=" "+rows2[x].name;
+												title += " "+rows2[x].name;
 												
 												let desc = "\u200B"+rows2[x].desc+'\n';
 												if(!f.nll(rows2[x].list)){
@@ -90,7 +64,7 @@ bot.on('message', message=>{
 													for(let y = 0; y < s_list.length; y++){
 														desc+="`"+s_list[y]+"`"
 														if(y != s_list.length-1){
-															desc += "; ";
+															desc += " ; ";
 														}
 													}
 													desc+="*\n";
@@ -101,7 +75,7 @@ bot.on('message', message=>{
 													for(let y = 0; y < s_ex.length; y++){
 														desc+=" `"+s_ex[y]+"`"
 														if(y != s_ex.length-1){
-															desc += ";";
+															desc += " ; ";
 														}
 													}
 													desc+="*\n";
@@ -122,42 +96,187 @@ bot.on('message', message=>{
 											mess.addField('*Aucun paramètre*', '\u200B',true);
 											mess.addField('\u200B','\u200B',true);
 										}
+										
+										// EX & LIST
+										let list = '\u200B\u200B';
+										if(!f.nll(rows[0].list)){
+											list += "*";
+											let s_list = rows[0].list.split(";");
+											for(let y = 0; y < s_list.length; y++){
+												list += "`"+s_list[y]+"`"
+												if(y != s_list.length-1){
+													list += " ; ";
+												}
+											}
+											list += "*\n";
+										}
+										let ex = '\u200B\u200B';
+										if(!f.nll(rows[0].ex)){
+											// ex += "*";
+											let s_ex = rows[0].ex.replace(/<pref>/g, v[s].pref).split(";");
+											for(let y = 0; y < s_ex.length; y++){
+												if(y == 0){
+													ex += "Ex. : ";
+												}else{
+													ex += " ; ";
+												}
+												// ex += "`"+s_ex[y]+"`"
+												ex += f.mark(s_ex[y],'`');
+											}
+											// ex += "*\n";
+										}
+										mess.addField(list,f.mark(ex,'*'))
+											.setTitle(title);
+
 										message.channel.send({ files: [file[0]], embed: mess });
 									})
 							}else{
-								mess.addField('\u200B', ':warning: La fonction *`'+args[1]+'`* n\'existe pas.\n\u200B \u200B \u200B <:help:726511256269226046> *`'+v[s].pref+'help`*')
+								mess.addField('\u200B', ':warning: La fonction '+f.mark(larg(1))+' n\'existe pas.\n\u200B \u200B \u200B <:help:726511256269226046> *`'+v[s].pref+'help`*')
+								message.channel.send({ files: [file[0]], embed: mess });
+							}
+						})
+				}else if(!f.nll(args[1])){
+					f.sql("SELECT * FROM `help` WHERE `name`='"+args[1]+"' AND `par` IS NULL")
+						.then(rows=>{
+							if(!f.nll(rows)){
+								let title = "**Aide ‧ "+v[s].pref.replace(/\*\*/,'\\**')+rows[0].name+"**";
+								mess // .setTitle("**Aide ‧ "+v[s].pref.replace(/\*\*/,'\\**')+rows[0].name+"**")
+									.setDescription(rows[0].desc);
+								f.sql("SELECT * FROM `help` WHERE `par` LIKE '"+args[1]+"-%' ORDER BY `par` ASC")
+									.then(rows2=>{
+										if(!f.nll(rows2)){
+											for(let x=0;x<rows2.length;x++){
+												let name=" "+rows2[x].name;
+												title += " "+rows2[x].name;
+												
+												let desc = "\u200B"+rows2[x].desc+'\n';
+												if(!f.nll(rows2[x].list)){
+													desc+="*";
+													let s_list=rows2[x].list.split(";");
+													for(let y = 0; y < s_list.length; y++){
+														desc+="`"+s_list[y]+"`"
+														if(y != s_list.length-1){
+															desc += " ; ";
+														}
+													}
+													desc+="*\n";
+												}
+												if(!f.nll(rows2[x].ex)){
+													desc+="\u200B*Ex. : ";
+													let s_ex=rows2[x].ex.split(";");
+													for(let y = 0; y < s_ex.length; y++){
+														desc+=" `"+s_ex[y]+"`"
+														if(y != s_ex.length-1){
+															desc += " ; ";
+														}
+													}
+													desc+="*\n";
+												}
+				
+												if(x!=0 && x%2==1){
+													mess.addField('\u200B','\u200B',true);
+												}
+												if(x == rows2.length && x%2==0){
+													mess.addField('\u200B','\u200B',true);
+													mess.addField('\u200B','\u200B',true);
+												}
+				
+												mess.addField(name, desc, true);
+											}
+										}else{
+											mess.addField('\u200B','\u200B',true);
+											mess.addField('*Aucun paramètre*', '\u200B',true);
+											mess.addField('\u200B','\u200B',true);
+										}
+										
+										// EX & LIST
+										let list = '\u200B\u200B';
+										if(!f.nll(rows[0].list)){
+											list += "*";
+											let s_list = rows[0].list.split(";");
+											for(let y = 0; y < s_list.length; y++){
+												list += "`"+s_list[y]+"`"
+												if(y != s_list.length-1){
+													list += " ; ";
+												}
+											}
+											list += "*\n";
+										}
+										let ex = '\u200B\u200B';
+										if(!f.nll(rows[0].ex)){
+											// ex += "*";
+											let s_ex = rows[0].ex.replace(/<pref>/g, v[s].pref).split(";");
+											for(let y = 0; y < s_ex.length; y++){
+												if(y == 0){
+													ex += "Ex. : ";
+												}else{
+													ex += " ; ";
+												}
+												// ex += "`"+s_ex[y]+"`"
+												ex += f.mark(s_ex[y],'`');
+											}
+											// ex += "*\n";
+										}
+										mess.addField(list,f.mark(ex,'*'))
+											.setTitle(title);
+
+										message.channel.send({ files: [file[0]], embed: mess });
+									})
+							}else{
+								mess.addField('\u200B', ':warning: La fonction '+f.mark(args[1])+' n\'existe pas.\n\u200B \u200B \u200B <:help:726511256269226046> *`'+v[s].pref+'help`*')
 								message.channel.send({ files: [file[0]], embed: mess });
 							}
 						})
 				}else{
-					mess.setFooter(v[s].pref+"help commande", "attachment://help.png");
-					f.sql("SELECT * FROM `help` WHERE `par` IS NULL ORDER BY `name` ASC")
+					mess.setFooter(v[s].pref+"help [commande]", "attachment://help.png")
+						.setTitle("__**Aide**__");
+
+					f.sql("SELECT DISTINCT `sect` FROM `help` WHERE `par` IS NULL AND `sect` IS NOT NULL ORDER BY `sect` ASC")
 						.then(rows => {
-							mess.setTitle("__**Aide**__");
-							for(let x = 0; x < rows.length; x++){
-								let name = "**"+v[s].pref+rows[x].name+"**";
-								f.sql("SELECT * FROM `help` WHERE `par` LIKE '"+rows[x].name+"%' ORDER BY `par` ASC")
+							for(let x = 0 ; x < rows.length ; x++){
+
+								let sect = "= '"+rows[x].sect+"'";
+								if(!rows[x].sect){
+									sect = "IS NULL";
+								}//else{
+									// mess.addField(rows[x].sect,'\u200B');
+								//}
+
+								f.sql("SELECT * FROM `help` WHERE `sect` "+sect+" AND `par` IS NULL ORDER BY `name` ASC")
 									.then(rows2 => {
-										for(let y = 0; y<rows2.length; y++){
-											name += " "+rows2[y].name;
-										}
-										if(x!=0 && x%2==1){
-											mess.addField('\u200B','\u200B',true)
-										}
-										mess.addField(name,"\u200B\u200B "+rows[x].sdesc,true);
-										if(x == rows.length-1 && x%2==0){
-											mess.addField('\u200B','\u200B',true);
-											mess.addField('\u200B','\u200B',true);
-										}
-										if(x == rows.length-1){
-											message.channel.send({ files: [file[0]], embed: mess });
+
+										for(let y = 0; y < rows2.length; y++){
+											let name = "**"+v[s].pref+rows2[y].name+"**";
+											f.sql("SELECT * FROM `help` WHERE `par` LIKE '"+rows2[x].name+"-%' ORDER BY `par` ASC")
+												.then(rows3 => {
+													if(y == 0 && rows[x].sect.match(/\S/g)){
+														mess.addField('\u200B','\u200B\u200B\u200B ___**'+rows[x].sect+'**___');
+													}
+													for(let z = 0; z<rows3.length; z++){
+														name += " "+rows3[z].name;
+													}
+													if(y!=0 && y%2==1){
+														mess.addField('\u200B','\u200B',true)
+													}
+													mess.addField(name,"\u200B\u200B "+rows2[y].sdesc,true);
+													if(y == rows2.length-1 && y%2==0){
+														mess.addField('\u200B','\u200B',true);
+														mess.addField('\u200B','\u200B',true);
+													}
+													if(y == rows2.length-1 && x == rows.length-1){
+														message.channel.send({ files: [file[0]], embed: mess });
+													}
+												});
 										}
 									});
+
 							}
-						});
+						})
 				}
 				break;
 			case 'passion':
+				if(!v[s][args[0]]){message.channel.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
+				
 				message.channel.send('C\'est vraiment passionnément passionnant !');
 				break;
 			case 'zoom':
@@ -170,40 +289,53 @@ bot.on('message', message=>{
 					}); */
 				break;
 			case 'set':
-				if(message.member.id==process.env.moderator || message.member.hasPermission("ADMINISTRATOR")){
+				if(message.member.id == process.env.moderator || message.member.hasPermission("ADMINISTRATOR")){
 					if(!f.nll(args[1])){
 						switch(args[1]){
 							case 'prefix':
 								if(!f.nll(args[2])){
 									if(larg(2).length>10){
 										message.channel.send(":warning: Le préfix ne peut pas être plus long que 10 caractères.")
+									}else if( (' '+larg(2)+' ').match(/(```)|([^`]``[^`]+`[^`])|([^`]`[^`]+``[^`])|(\*[^*]*_)|(_[^*]*\*)/g) ){
+										message.channel.send(":warning: Préfixe invalide.")
+									}else if(larg(2) == "default"){
+										f.sql("UPDATE `vars` SET `pref`=DEFAULT(`pref`) WHERE `server`='"+s+"'")
+											.then(() => {
+												f.sql("SELECT DEFAULT(`pref`) AS `default` FROM `vars`")
+													.then(rows => {
+														message.channel.send(":white_check_mark: Préfix changé à *`"+rows[0].default+"`*.");
+														global.v[s].pref=rows[0].default;
+													})
+											});
 									}else{
 										f.sql("UPDATE `vars` SET `pref`='"+larg(2)+"' WHERE `server`='"+s+"'")
 											.then(()=>{
-												message.channel.send(":white_check_mark: Préfix changé à *`"+larg(2)+"`*.");
+												message.channel.send(":white_check_mark: Préfix changé à "+f.mark(larg(2))+".");
 												global.v[s].pref=larg(2);
 											});
 									}
 								}else{
-									message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help set`*");
+									message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set prefix"));
 								}
 								break;
 							case 'bday_hour':
+								if(!v[s].bday){message.channel.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
 								if(!f.nll(args[2])){
 									if(!larg(2).toString ().match (/^([01]\d|2[0-3])(:)([0-5]\d)$/)){
 										message.channel.send(":warning: Veuillez entrer l'heure sous le format `HH:MM` (24h).")
 									}else{
 										f.sql("UPDATE `vars` SET `bday_hour`='"+larg(2)+"' WHERE `server`='"+s+"'")
 											.then(()=>{
-												message.channel.send(":white_check_mark: Heure d'anniversaire changé à *`"+larg(2)+"`*.");
+												message.channel.send(":white_check_mark: Heure d'anniversaire changée à *`"+larg(2)+"`*.");
 												global.v[s].bday_hour=larg(2);
 											});
 									}
 								}else{
-									message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help set`*");
+									message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set bday_hour"));
 								}
 								break;
 							case 'bday_channel':
+								if(!v[s].bday){message.channel.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
 								if(!f.nll(args[2])){
 									if( message.guild.channels.cache.find(channel => channel.id == f.c_mention(args[2])[1]) ){
 										f.sql("UPDATE `vars` SET `bday_channel`='"+f.c_mention(args[2])[1]+"' WHERE `server`='"+s+"'")
@@ -223,10 +355,11 @@ bot.on('message', message=>{
 									}
 									
 								}else{
-									message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help set`*");
+									message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set bday_channel"));
 								}
 								break;
 							case 'bday_message':
+								if(!v[s].bday){message.channel.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
 								if(!f.nll(args[2])){
 									if(larg(2).length <= 500){
 										if(args[2] == "default"){
@@ -249,14 +382,52 @@ bot.on('message', message=>{
 										message.channel.send(":warning: Le message ne peut pas être plus long que 500 caractères.")
 									}
 								}else{
-									message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help set`*");
+									message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set bday_message"));
+								}
+								break;
+							case 'enable':
+								if(!f.nll(args[2])){
+									if(typeof v[s][args[2]] != "undefined"){
+										if(v[s][args[2]] == 0){
+											f.sql("UPDATE `vars` SET `"+args[2]+"` = 1 WHERE `server`='"+s+"'")
+												.then(() => {
+													v[s][args[2]] = 1;
+													message.channel.send(":white_check_mark: Fonction activée (*`"+args[2]+"`*).");
+												});
+										}else{
+											message.channel.send("<:info:725144790915743754> Cette fonction est déjà activée (*`"+args[2]+"`*).");
+										}
+									}else{
+										message.channel.send(":warning: Cette fonction n'existe pas.")
+									}
+								}else{
+									message.channel.send("<:info:725144790915743754> Veuillez préciser la fonction à activer.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set enable"));
+								}
+								break;
+							case 'disable':
+								if(!f.nll(args[2])){
+									if(typeof v[s][args[2]] != "undefined"){
+										if(v[s][args[2]] == 1){
+											f.sql("UPDATE `vars` SET `"+args[2]+"` = 0 WHERE `server`='"+s+"'")
+												.then(() => {
+													v[s][args[2]] = 0;
+													message.channel.send(":white_check_mark: Fonction désactivée (*`"+args[2]+"`*).");
+												});
+										}else{
+											message.channel.send("<:info:725144790915743754> Cette fonction est déjà désactivée (*`"+args[2]+"`*).");
+										}
+									}else{
+										message.channel.send(":warning: Cette fonction n'existe pas.")
+									}
+								}else{
+									message.channel.send("<:info:725144790915743754> Veuillez préciser la fonction à désactiver.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set disable"));
 								}
 								break;
 							default:
-								message.channel.send(":warning: Le paramètre *`"+args[1]+"`* n'existe pas.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help set`*");
+								message.channel.send(":warning: Le paramètre "+f.mark(args[1])+" n'existe pas.\n\u200B \u200B \u200B <:help:726511256269226046>  "+f.mark(v[s].pref+"help set"));
 						}
 					}else{
-						message.channel.send("<:info:725144790915743754> Veuillez préciser le paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help set`*");
+						message.channel.send("<:info:725144790915743754> Veuillez préciser le paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set"));
 					}
 				}else{
 					message.channel.send(':warning: Vous n\'avez pas la permission de modifier les paramètres.');
@@ -275,11 +446,10 @@ bot.on('message', message=>{
 							});
 					}
 				}else{
-					message.channel.send("<:info:725144790915743754> Veuillez indiquer votre suggestion.\n\u200B \u200B \u200B *`"+v[s].pref+"help suggest`*");
+					message.channel.send("<:info:725144790915743754> Veuillez indiquer votre suggestion.\n\u200B \u200B \u200B "+f.mark(v[s].pref+"help suggest"));
 				}
 				break;
 			case 'about':
-				// var moment = require('moment-timezone');
 				let d=moment().tz("America/Toronto").format("DD/MM/YY HH:mm");
 
 				let nv = new Array;
@@ -298,15 +468,21 @@ bot.on('message', message=>{
 				if(nv[2]){ // avec ssv
 					fv = 2;
 					fv1 = 1;
-					query="SELECT * FROM `about` WHERE `id`='"+args[1]+"' AND STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY `id` ASC LIMIT 6";
+					query="SELECT * FROM `about` WHERE `id`='"+args[1]+"' AND STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ASC LIMIT 1";
 				}else if(nv[1]){ // avec sv
 					fv = 2;
 					fv1 = 0;
-					query="SELECT * FROM `about` WHERE `id` LIKE '"+args[1]+"%' AND STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY `id` ASC LIMIT 6";
+					query="SELECT * FROM `about` WHERE `id` LIKE '"+args[1]+"%' AND STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ASC LIMIT 6";
 				}else if(nv[0]){ // avec v
-					fv = 0;
-					fv1 = 1;
-					query="SELECT * FROM `about` WHERE `id` LIKE '"+args[1]+"%' AND `id` LIKE '%.0' AND STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY `id` ASC LIMIT 6";
+					if(args[1] != "next"){
+						fv = 0;
+						fv1 = 1;
+						query="SELECT * FROM `about` WHERE `id` LIKE '"+args[1]+"%' AND `id` LIKE '%.0' AND STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ASC LIMIT 6";
+					}else{
+						fv = 2;
+						fv1 = 1;
+						query="SELECT * FROM `about` WHERE STR_TO_DATE(`date`, '%d/%m/%y %H:%i')>=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ASC LIMIT 1";
+					}
 				}else{ // avec rien
 					fv = 2;
 					fv1 = 0;
@@ -322,20 +498,37 @@ bot.on('message', message=>{
 							bot.users.fetch(process.env.moderator).then(mod => {
 								bot.users.fetch(process.env.bot).then(bot => {
 									momFormat(moment);
+									let d_form = "";
 									let d_diff = moment.duration( moment(d,"DD/MM/YY HH:mm").diff(moment(rows[0].date,"DD/MM/YY HH:mm")) );
-									let d_form;
+									if(args[1] && args[1] == "next" && d_diff < 0){
+										d_diff = moment.duration( moment(rows[0].date,"DD/MM/YY HH:mm").diff(moment(d,"DD/MM/YY HH:mm")) );
+										if(d_diff.format("s").replace(/,/g, "") >= 60 && d_diff.format("d").replace(/,/g, "") < 7){d_form += "Dans "}
+									}else if(d_diff.format("s").replace(/,/g, "") >= 60 && d_diff.format("d").replace(/,/g, "") < 7){d_form += "Il y a "}
+
 									if(d_diff.format("M").replace(/,/g, "") >= 6){
-										d_form = rows[0].date.substr(0,6)+"20"+rows[0].date.substr(6,2);
+										d_form += rows[0].date.substr(0,6)+"20"+rows[0].date.substr(6,2);
 									}else if(d_diff.format("d").replace(/,/g, "") >= 7){
-										d_form = parseInt( rows[0].date.substr(0,2) ) + " " + f.abv_month[ parseInt(rows[0].date.substr(3,2)) ]
+										d_form += parseInt( rows[0].date.substr(0,2) ) + " " + f.abv_month[ parseInt(rows[0].date.substr(3,2)) ]
 									}else if(d_diff.format("h").replace(/,/g, "") >= 24){
-										d_form = d_diff.format("d") + "j"
+										if(d_diff.format("d") != 1){
+											d_form += d_diff.format("d") + " jours"
+										}else{
+											d_form += "1 jour"
+										}
 									}else if(d_diff.format("m").replace(/,/g, "") >= 60){
-										d_form = d_diff.format("h") + "h"
+										if(d_diff.format("h") != 1){
+											d_form += d_diff.format("h") + " heures"
+										}else{
+											d_form += "1 heure"
+										}
 									}else if(d_diff.format("s").replace(/,/g, "") >= 60){
-										d_form = d_diff.format("m") + " min"
+										if(d_diff.format("m") != 1){
+											d_form += d_diff.format("m") + " minutes"
+										}else{
+											d_form += "1 minute"
+										}
 									}else if(d_diff.format("s").replace(/,/g, "") < 60){
-										d_form = "Quelq. sec."
+										d_form += "Quelques secondes"
 									}
 
 									let mess = new Discord.MessageEmbed()
@@ -361,9 +554,9 @@ bot.on('message', message=>{
 										let d_diff = moment.duration( moment(d,"DD/MM/YY HH:mm").diff(moment(rows[x].date,"DD/MM/YY HH:mm")) );
 										let d_form;
 										if(d_diff.format("M").replace(/,/g, "") >= 6){
-											d_form = rows[0].date.substr(0,6)+"20"+rows[0].date.substr(6,2);
+											d_form = rows[x].date.substr(0,6)+"20"+rows[x].date.substr(6,2);
 										}else if(d_diff.format("d").replace(/,/g, "") >= 7){
-											d_form = parseInt( rows[0].date.substr(0,2) ) + " " + f.abv_month[ parseInt(rows[0].date.substr(3,2)) ]
+											d_form = parseInt( rows[x].date.substr(0,2) ) + " " + f.abv_month[ parseInt(rows[x].date.substr(3,2)) ]
 										}else if(d_diff.format("h").replace(/,/g, "") >= 24){
 											d_form = d_diff.format("d") + "j"
 										}else if(d_diff.format("m").replace(/,/g, "") >= 60){
@@ -384,7 +577,7 @@ bot.on('message', message=>{
 								});
 							});
 						}else{
-							message.channel.send(':warning: La version *`'+args[1]+'`* n\'existe pas.\n\u200B \u200B \u200B <:help:726511256269226046> *`'+v[s].pref+'about`*');
+							message.channel.send(':warning: La version *`'+args[1]+'`* n\'existe pas.\n\u200B \u200B \u200B <:help:726511256269226046>  '+f.mark(v[s].pref+"help about"));
 						}
 					})
 					.catch(err => {
@@ -392,6 +585,8 @@ bot.on('message', message=>{
 					});
 				break;
 			case 'poll':
+				if(!v[s][args[0]]){message.channel.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
+				
 				message.fetch({limit:1}).then(msg=>{ setTimeout(()=>{msg.delete();return;},10000); });
 				let mess2 = new Discord.MessageEmbed()
 					.setColor('#99ff99')
@@ -428,7 +623,7 @@ bot.on('message', message=>{
 					}else{
 						if(e == false){
 							if(x <= 2){
-								message.channel.send("<:info:725144790915743754> Veuillez indiquer un titre et au moins deux options.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help poll`*").then(msg2=>setTimeout(()=>{msg2.delete()},5000));
+								message.channel.send("<:info:725144790915743754> Veuillez indiquer un titre et au moins deux options.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help poll")).then(msg2=>setTimeout(()=>{msg2.delete()},5000));
 							}else if(x > 20){
 								message.channel.send(":warning: Il ne peut pas y avoir plus de 20 options.").then(msg2=>setTimeout(()=>{msg2.delete()},5000));
 							}else{
@@ -447,6 +642,8 @@ bot.on('message', message=>{
 				}
 				break;
 			case 'bday':
+				if(!v[s][args[0]]){message.channel.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
+				
 				if(!f.nll(v[s].bday_channel)){
 					if(!f.nll(args[1])){
 						if(f.nll(args[2])){
@@ -505,28 +702,80 @@ bot.on('message', message=>{
 								message.channel.send(":warning: Nom d'utilisateur incorrect.");
 							}
 						}else{
-							message.channel.send("<:info:725144790915743754> Veuillez préciser la date de naissance.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help bday`*");
+							message.channel.send("<:info:725144790915743754> Veuillez préciser la date de naissance.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help bday"));
 						}
 					}else{
-						message.channel.send("<:info:725144790915743754> Veuillez préciser l'utilisateur ou la date de naissance.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"help bday`*");
+						message.channel.send("<:info:725144790915743754> Veuillez préciser l'utilisateur ou la date de naissance.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help bday"));
 					}
 				}else{
-					message.channel.send("<:info:725144790915743754> Aucun salon d'affichage défini par les modérateurs.\n\u200B \u200B \u200B <:help:726511256269226046> *`"+v[s].pref+"set bday_channel [salon]`*")
+					message.channel.send("<:info:725144790915743754> Aucun salon d'affichage défini par les modérateurs.\n\u200B \u200B \u200B <:help:726511256269226046>  "+f.mark(v[s].pref+"help set bday_channel"));
 				}
 				break;
 		}
 	}
 });
 
-f.sql("SELECT * from `vars`")
-	.then(rows=>{
-		global.v=new Array;
-		for(let x = 0 ; x < rows.length ; x++){
-			let s = rows[x].server;
-			global.v[s]=rows[x];
-		}
-		bot.on('ready', () =>{
-			console.log('Bot A-Decametre.tk prêt !');
+function sync() {
+	console.log("Synchronizing…");
+	v_sync();
+	bday_sync();
+}
+
+function v_sync(){
+	f.sql("SELECT * from `vars`")
+		.then(rows=>{
+			global.v=new Array;
+			for(let x = 0 ; x < rows.length ; x++){
+				let s = rows[x].server;
+				global.v[s]=rows[x];
+			}
 		});
-	});
+}
+function bday_sync() {
+	let d=moment().tz("America/Toronto").format("DD/MM");
+	momFormat(moment);
+	let h=moment().tz("America/Toronto").format("HH:mm");
+	f.sql("SELECT `uid`, `server` FROM `bday` WHERE `done` = 0 && `date` LIKE '"+d+"%'")
+		.then(rows => {
+			// if(rows[0]){
+			for (let x = 0; x < rows.length; x++) {
+				// f.sql("SELECT `bday_channel`, `bday_hour`, `bday_message` FROM `vars` WHERE `server` = '"+rows[x].server+"'")
+					// .then(rows2 => {
+				if(v[rows[x].server] && v[rows[x].server].bday){
+					let d_diff = moment.duration( moment(h,"HH:mm").diff(moment(v[rows[x].server].bday_hour,"HH:mm")) ).format("m").replace(/,/g, "");
+
+					if (-5 <= d_diff && d_diff <= 55) {
+						let gu = bot.guilds.cache.find(guild => guild.id == rows[x].server) || null;
+						if(gu){
+							let ch = gu.channels.cache.find(channel => channel.id == v[rows[x].server].bday_channel) || null;
+							if (ch) {
+									f.sql("UPDATE `bday` SET `done`=1 WHERE `uid`='"+rows[x].uid+"' AND `server`='"+rows[x].server+"'")
+										.then(()=>{
+											ch.send(v[rows[x].server].bday_message.replace(/<@someone>/g,"<@!"+rows[x].uid+">"));
+										})
+							}
+						}
+					}
+				}
+					// })
+			}
+			// }
+		});
+	f.sql("SELECT `uid`, `server`, `date` FROM `bday` WHERE `done` = 1")
+		.then(rows => {
+			if(rows[0]){
+				for (let x = 0; x < rows.length; x++) {
+					let d_diff = moment.duration( moment(d,"DD/MM").diff(moment(rows[x].date,"DD/MM")) ).format("d").replace(/,/g, "");
+					if (d_diff >= 1) {
+						f.sql("UPDATE `bday` SET `done`=0 WHERE `uid`='"+rows[x].uid+"' AND `server`='"+rows[x].server+"'")
+					}
+				}
+			}
+			
+		});
+}
+
+bot.on('ready', () =>{
+	console.log('Bot A-Decametre.tk prêt !');
+});
 bot.login(process.env.token);
