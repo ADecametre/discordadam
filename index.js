@@ -20,6 +20,8 @@ bot.on('message', message=>{
 		if(message.content == '<@!'+process.env.bot+'>'){
 			args = ['help'];
 		}else if(message.content == 'Passionnant.' || message.content == 'Passionnément passionnant.'){
+			// ^([Cc][Oo][Mm]+[Ee]?[Cc]'?[Ee][Ss][Tt]?)?([Pp][Aa][Ss]+[Ii][Oo][Nn]+[EeÉé][Mm][AeEe][Nn][Tt])?([Pp][Aa][Ss]+[Ii][Oo][Nn]+([AaEe][Nn][Tt])?)?\.*!*$
+			// ^(Quellepassion([Pp][Aa][Ss]+[Ii][Oo][Nn]+[EeÉé][Mm][AeEe][Nn][Tt])?([Pp][Aa][Ss]+[Ii][Oo][Nn]+[AaEe][Nn][Tt][Ee]?))|(([Cc][Oo][Mm]+[Ee]?[Cc]'?[EeÈèÊêÉé][Ss]?[Tt]?)?([Pp][Aa][Ss]+[Ii][Oo][Nn]+[EeÉé][Mm][AeEe][Nn][Tt])?([Pp][Aa][Ss]+[Ii][Oo][Nn]+([AaEe][Nn][Tt][Ee]?)?))(\.*!*$)
 			args = ['passion'];
 		}else if(message.content.startsWith(v[s].pref)){
 			args = message.content.substring(v[s].pref.length).replace(/'/g, "\\'").split(" ");
@@ -280,13 +282,45 @@ bot.on('message', message=>{
 				message.channel.send('C\'est vraiment passionnément passionnant !');
 				break;
 			case 'zoom':
-				/* req('https://BlandInsecureProgramminglanguage--five-nine.repl.co')
-					.then((htmlString) => {
-						message.channel.send(htmlString);
+				if(!(s == 630090289951801356 || s == 700823351379361892)){message.channel.send("<:info:725144790915743754> Cette fonction n'est disponible que sur des serveurs sélectionnés.");break;}
+
+				message.fetch({limit:1}).then(msg=>{ setTimeout(()=>{msg.delete();return;},10000); });
+				let d1 = moment().tz("America/Toronto").format("DD/MM/YY HH:mm");
+				let now1 = moment(d1,"DD/MM/YY HH:mm:ss").format("YYYY/MM/DD HH:mm:ss");
+				f.sql("SELECT * FROM `zoom` WHERE STR_TO_DATE(`time`, '%d/%m/%y %H:%i') >= DATE_SUB('"+now1+"', INTERVAL 10 MINUTE) AND STR_TO_DATE(`time`, '%d/%m/%y %H:%i') <= DATE_ADD('"+now1+"', INTERVAL 20 MINUTE) AND `exe`=0 ORDER BY STR_TO_DATE(`time`, '%d/%m/%y %H:%i');")
+					.then(rows=>{
+						const conv_cours = {"FR":"Français", "SC":"Science", "HI":"Histoire", "AN":"Anglais", "MA":"Mathématiques", "EP":"Éducation physique", "ES":"Espagnol", "AR":"Arabe"/*, "FM":"Français/Mathématiques"*/};
+						const conv_groupe = {"Co":" - Cobalt", "Hg":" - Mercure", "Av":" - Avancé", "Re":" - Régulier", "Ar":" - Arabe", /*"Cr":" - Corail", "Ma":" - Marine",*/ "S4":""/*, "P5":""*/};
+						
+						if(rows.length){
+							var crs = [];
+							for(let x=0;x<rows.length;x++){
+								let h = rows[x].time.substring(9).replace(":","h").replace("h00","h");
+								if(!crs[h]){
+									crs[h] = [];
+								}
+								if((x+1)%3 == 0){
+									crs[h]["**\xa0\xa0\xa0\xa0 | \xa0**"] = "**\xa0\xa0\xa0\xa0\xa0\xa0|** \n **\xa0\xa0\xa0\xa0\xa0\xa0|**";
+								}
+								if(1==1){
+									crs[h]["__**"+conv_cours[rows[x].cours.substring(3,5)]+conv_groupe[rows[x].cours.substring(0,2)]+"**__"] = "\n\xa0\xa0*"+rows[x].ID+"* - *"+rows[x].PW+"*\n\xa0\xa0\xa0*("+rows[x].LN+")*";
+									f.sql('UPDATE `zoom` SET `exe`=1 WHERE `cours`="'+rows[x].cours+'"');
+								}
+							}
+							for(var key in crs){
+								var embed = new Discord.MessageEmbed()
+									.setTitle(key)
+									.setColor(10092441);
+								for(var key1 in crs[key]){
+									embed.addField(key1, crs[key][key1], true);
+								}
+								message.channel.send({embed: embed})
+								// console.log(crs);
+							};
+						}else{
+							message.channel.send("<:info:725144790915743754> Aucune conférence dans les 20 prochaines minutes.")
+						}
 					})
-					.catch((err) => {
-						f.err_rep("zoom-req",err).then(value=>{message.channel.send(value);});
-					}); */
 				break;
 			case 'set':
 				if(message.member.id == process.env.moderator || message.member.hasPermission("ADMINISTRATOR")){
@@ -537,7 +571,7 @@ bot.on('message', message=>{
 										.setURL()
 										.setAuthor(bot.username, null, 'http://a-decametre.tk')
 										.setDescription(rows[0].info)
-										.setThumbnail(bot.avatarURL())
+										.setThumbnail(bot.displayAvatarURL())
 										/* .addFields(
 											{ name: 'Regular field title', value: 'Some value here' },
 											{ name: '\u200B', value: '\u200B' },
@@ -545,9 +579,9 @@ bot.on('message', message=>{
 											{ name: 'Inline field title', value: 'Some value here', inline: true },
 										)
 										.addField('Inline field title', 'Some value here', true)
-										.setImage(bot.avatarURL())
+										.setImage(bot.displayAvatarURL())
 										.setTimestamp() */
-										.setFooter(mod.username+'#'+mod.discriminator+'\n', mod.avatarURL());
+										.setFooter(mod.username+'#'+mod.discriminator+'\n', mod.displayAvatarURL());
 
 									for(let x = rows.length-1;x>0;x--){
 										momFormat(moment);
@@ -588,9 +622,11 @@ bot.on('message', message=>{
 				if(!v[s][args[0]]){message.channel.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
 				
 				message.fetch({limit:1}).then(msg=>{ setTimeout(()=>{msg.delete();return;},10000); });
+				let user = message.member.nickname || message.author.username;
+				// let mem = message.guild.members.cache.find(member => member.id == message.author.id);
 				let mess2 = new Discord.MessageEmbed()
 					.setColor('#99ff99')
-					.setAuthor(message.author.username+'#'+message.author.discriminator+'\n', message.author.avatarURL());
+					.setAuthor(user+'\n', message.author.displayAvatarURL());
 
 				let str = larg(1);
 				let char;
@@ -711,6 +747,20 @@ bot.on('message', message=>{
 					message.channel.send("<:info:725144790915743754> Aucun salon d'affichage défini par les modérateurs.\n\u200B \u200B \u200B <:help:726511256269226046>  "+f.mark(v[s].pref+"help set bday_channel"));
 				}
 				break;
+			case 'pfp' :
+				if(!v[s][args[0]]){message.channel.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
+
+				if(f.nll(args[1])){
+					message.channel.send({files: [message.author.displayAvatarURL()]})
+				}else{
+					let mem = message.guild.members.cache.find(member => member.id == f.u_mention(args[1])[1] || member.user.username == args[1].replace(/([^\\])(_)/g,'$1 ').replace(/\\/g,'') || member.nickname == args[1].replace(/([^\\])(_)/g,'$1 ').replace(/\\/g,'')) || null;
+					if(mem){
+						message.channel.send({files: [mem.user.displayAvatarURL()]})
+					}else{
+						message.channel.send(":warning: Nom d'utilisateur incorrect.");
+					}
+				}
+				break;
 		}
 	}
 });
@@ -744,7 +794,7 @@ function bday_sync() {
 				if(v[rows[x].server] && v[rows[x].server].bday){
 					let d_diff = moment.duration( moment(h,"HH:mm").diff(moment(v[rows[x].server].bday_hour,"HH:mm")) ).format("m").replace(/,/g, "");
 
-					if (-5 <= d_diff && d_diff <= 55) {
+					if (-5 <= d_diff && d_diff <= 115) {
 						let gu = bot.guilds.cache.find(guild => guild.id == rows[x].server) || null;
 						if(gu){
 							let ch = gu.channels.cache.find(channel => channel.id == v[rows[x].server].bday_channel) || null;
