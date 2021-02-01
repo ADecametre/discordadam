@@ -6,50 +6,137 @@ const req = require('request-promise');
 const { resolve } = require('path');
 const moment = require('moment-timezone');
 const momFormat = require("moment-duration-format");
-//const { sql } = require('./functions.js');
-// var requireWithoutCache = require('require-without-cache');
-// f.rfile('./cache/prefix.txt').then(data=>{console.log('H:'+data);global.pref = data;});
+const { Octokit } = require("@octokit/rest");
+const octokit = new Octokit({auth:process.env.git_token,timeZone:"America/Toronto"});
 
 sync();
 setInterval(sync, 10*60*1000);
 
 bot.on('message', message=>{
-	let s = message.guild.id;
+	let s = null;
+	if(message.guild){
+		s = message.guild.id;
+	}
 	if(!f.nll(v[s])){
 		let messages = [];
 		let cont = true;
-		let repl = str => str.replace(/<pref>/g,v[s].pref).replace(/<@bot>/g,process.env.bot).replace(/<@mod>/g,process.env.moderator);
+		let repl = str => str.replace(/<pref>/g,v[s].pref).replace(/<@bot>/g,process.env.bot).replace(/<@mod>/g,process.env.moderator).replace(/<@auth>/g,message.author.id);
+		
+		// INTERACTIONS
 		for(let x = 0 ; x < i.length ; x++){
-			if(message.content.match(RegExp(repl(i[x].message),"g")) && message.author.id.match(RegExp(repl(i[x].author),"g"))){
+
+			// Check server
+			if(i[x].server){
+				if(!( !i[x].server.split(" ").includes("-"+s) && (!i[x].server.split(" ").some(v => v > 0) || i[x].server.split(" ").includes(s)) )){
+					continue;
+				}
+			}
+
+			// Check times
+			if(i[x].time){
+				let time = new Date().getTime()/1000;
+				let incl = false;
+				let times = i[x].time.split("&&");
+				let regex = [];
+				for(let t = 0 ; t < times.length ; t++){
+					regex[t] = (/(\d+)?-(\d+)?/).exec(times[t])
+					if((!regex[t][1] || Number(time) >= Number(regex[t][1])) && (!regex[t][2] || Number(time) <= Number(regex[t][2]))){
+						incl = true;
+						break;
+					}
+				}
+				if(!incl){continue}
+			}
+
+			// Check RegExp
+			if(!( message.content.match(RegExp(repl(i[x].message),"g")) && message.author.id.match(RegExp(repl(i[x].author),"g")) )){
+				continue;
+			}
+
+
+				// Send message
 				if(i[x].send){
-					let sends = i[x].send.split(";;;");
+					// Reg Groups
+					let sends = repl(i[x].send);
+					let num_groups = (new RegExp(repl(i[x].message) + '|')).exec('').length - 1;
+					let groups = (new RegExp(repl(i[x].message))).exec(message.content)
+					for(let y = 1 ; y <= num_groups ; y++){
+						sends = sends.replace(new RegExp("\\$\\{"+y+"\\}","g"), groups[y] || "")
+					}
+					// Messages
+					sends = sends.split(";;;");
+					let msg = [];
 					for(let y = 0 ; y < sends.length ; y++){
-						if(i[x].delete_self != null){
-							message.channel.send(sends[y]).then(msg2=>setTimeout(()=>{msg2.delete()},i[x].delete_self))
+						// Randomise
+						if(sends[y].split(";OR;").length > 1){
+							msg[y] = sends[y].split(";OR;")[Math.floor(Math.random()*(sends[y].split(";OR;").length))]
 						}else{
-							message.channel.send(sends[y])
+							msg[y] = sends[y]
+						}
+						// Send (/Delete self)(Delay)
+						if(i[x].delete_self != null){
+							setTimeout(()=>message.channel.send(msg[y]).then(msg2=>setTimeout(()=>{msg2.delete()},i[x].delete_self)),i[x].delay)
+						}else{
+							setTimeout(()=>message.channel.send(msg[y]),i[x].delay)
 						}
 					}
 				}
+				// Direct message
+				if(i[x].dm){
+					let sends = i[x].dm.split(";;;");
+					let pmsg = []
+					let msg = [];
+					for(let y = 0 ; y < sends.length ; y++){
+						//Analyse
+						pmsg[y] = (/\[\[(.+)\]\]{{(.+)}}/g).exec(repl(sends[y]))
+						// Randomise
+						msg[y] = [];
+						if(pmsg[y]){
+							for(z = 1; z <= 2; z++){
+								if(pmsg[y][z].split(";OR;").length > 1){
+									msg[y][z] = pmsg[y][z].split(";OR;")[Math.floor(Math.random()*(sends[y].split(";OR;").length))]
+								}else{
+									msg[y][z] = pmsg[y][z]
+								}
+							}
+						}else{
+							console.error("Interaction DM could not be sent.1")
+						}
+						// Send (/Delete self)(Delay)
+						if(msg[y] && bot.users.cache.get(msg[y][1])){
+							if(i[x].delete_self != null){
+								setTimeout(()=>bot.users.cache.get(msg[y][1]).send(msg[y][2]).then(msg2=>setTimeout(()=>{msg2.delete()},i[x].delete_self)),i[x].delay)
+							}else{
+								setTimeout(()=>bot.users.cache.get(msg[y][1]).send(msg[y][2]),i[x].delay)
+							}
+						}else{
+							console.error("Interaction DM could not be sent.");
+						}
+					}
+				}
+				// Execute command
 				if(i[x].command){
 					let coms = i[x].command.split(";;;");
 					for(let y = 0 ; y < coms.length ; y++){
 						messages.push(repl(coms[y]));
 					}
 				}
+				// React
 				if(i[x].react){
 					let reacts = i[x].react.split(";");
 					for(let y = 0 ; y < reacts.length ; y++){
 						message.react(reacts[y]);
 					}
 				}
+				// Delete
 				if(i[x].delete != null){
 					setTimeout(()=>{message.delete();return;},i[x].delete);
 				}
+				// Continue program
 				if(!i[x].continue){
 					cont = false;
 				}
-			}
+
 		}
 		if(cont){messages.push(message.content)}
 		
@@ -94,7 +181,7 @@ bot.on('message', message=>{
 													let desc = "\u200B"+rows2[x].desc+'\n';
 													if(!f.nll(rows2[x].list)){
 														desc+="*";
-														let s_list=rows2[x].list.split(";");
+														let s_list=rows2[x].list.split(";;;");
 														for(let y = 0; y < s_list.length; y++){
 															desc+="`"+s_list[y]+"`"
 															if(y != s_list.length-1){
@@ -105,7 +192,7 @@ bot.on('message', message=>{
 													}
 													if(!f.nll(rows2[x].ex)){
 														desc+="\u200B*Ex. : ";
-														let s_ex=rows2[x].ex.split(";");
+														let s_ex=rows2[x].ex.split(";;;");
 														for(let y = 0; y < s_ex.length; y++){
 															desc+=" `"+s_ex[y]+"`"
 															if(y != s_ex.length-1){
@@ -135,7 +222,7 @@ bot.on('message', message=>{
 											let list = '\u200B\u200B';
 											if(!f.nll(rows[0].list)){
 												list += "*";
-												let s_list = rows[0].list.split(";");
+												let s_list = rows[0].list.split(";;;");
 												for(let y = 0; y < s_list.length; y++){
 													list += "`"+s_list[y]+"`"
 													if(y != s_list.length-1){
@@ -147,7 +234,7 @@ bot.on('message', message=>{
 											let ex = '\u200B\u200B';
 											if(!f.nll(rows[0].ex)){
 												// ex += "*";
-												let s_ex = rows[0].ex.replace(/<pref>/g, v[s].pref).split(";");
+												let s_ex = rows[0].ex.replace(/<pref>/g, v[s].pref).split(";;;");
 												for(let y = 0; y < s_ex.length; y++){
 													if(y == 0){
 														ex += "Ex. : ";
@@ -197,7 +284,7 @@ bot.on('message', message=>{
 													let desc = "\u200B"+rows2[x].desc+'\n';
 													if(!f.nll(rows2[x].list)){
 														desc+="*";
-														let s_list=rows2[x].list.split(";");
+														let s_list=rows2[x].list.split(";;;");
 														for(let y = 0; y < s_list.length; y++){
 															desc+="`"+s_list[y]+"`"
 															if(y != s_list.length-1){
@@ -208,7 +295,7 @@ bot.on('message', message=>{
 													}
 													if(!f.nll(rows2[x].ex)){
 														desc+="\u200B*Ex. : ";
-														let s_ex=rows2[x].ex.split(";");
+														let s_ex=rows2[x].ex.split(";;;");
 														for(let y = 0; y < s_ex.length; y++){
 															desc+=" `"+s_ex[y]+"`"
 															if(y != s_ex.length-1){
@@ -239,7 +326,7 @@ bot.on('message', message=>{
 											let list = '\u200B\u200B';
 											if(!f.nll(rows[0].list)){
 												list += "*";
-												let s_list = rows[0].list.split(";");
+												let s_list = rows[0].list.split(";;;");
 												for(let y = 0; y < s_list.length; y++){
 													list += "`"+s_list[y]+"`"
 													if(y != s_list.length-1){
@@ -251,7 +338,7 @@ bot.on('message', message=>{
 											let ex = '\u200B\u200B';
 											if(!f.nll(rows[0].ex)){
 												// ex += "*";
-												let s_ex = rows[0].ex.replace(/<pref>/g, v[s].pref).split(";");
+												let s_ex = rows[0].ex.replace(/<pref>/g, v[s].pref).split(";;;");
 												for(let y = 0; y < s_ex.length; y++){
 													if(y == 0){
 														ex += "Ex. : ";
@@ -512,18 +599,52 @@ bot.on('message', message=>{
 					break;
 				case 'suggest':
 					if(!f.nll(args[1])){
-						if(args[1].length>1000){
-							message.channel.send(":warning: La suggestion ne peut pas être plus longue que 1000 caractères.")
+						if(args[1].length>200){
+							message.channel.send(":warning: La suggestion ne peut pas être plus longue que 200 caractères.")
 						}else{
-							// var moment = require('moment-timezone');
-							let d=moment().tz("America/Toronto").format("DD/MM/YY HH:mm:ss");
-							f.sql("INSERT INTO `suggest`(`name`, `uid`, `date`, `sug`) VALUES ('"+message.member.user.tag+"','"+message.member.id+"','"+d+"','"+larg(1)+"')")
-								.then(()=>{
-									message.channel.send(":white_check_mark: Suggestion envoyée à <@!"+process.env.moderator+">.");
-								});
+							octokit.request('POST /repos/{owner}/{repo}/issues', {
+								owner: 'ADecametre',
+								repo: 'discordadam',
+								title: `[Bot] ${message.member.user.tag} (<@${message.member.id}>) - ${larg(1)}`,
+								labels: ['enhancement']
+							}).then(({ data }) => {
+								console.log(data);
+								message.channel.send(":white_check_mark: Suggestion envoyée.\nMerci de supporter le bot.");
+								let mess = new Discord.MessageEmbed()
+									.setColor('#99ff99')
+									.setAuthor(`${message.member.user.tag} (<@${message.member.id}>)`, message.author.displayAvatarURL({dynamic : true}))
+									.setTitle("Nouvelle suggestion")
+									.setDescription(larg(1));
+								bot.users.cache.get(process.env.moderator).send(mess);
+							});
 						}
 					}else{
 						message.channel.send("<:info:725144790915743754> Veuillez indiquer votre suggestion.\n\u200B \u200B \u200B "+f.mark(v[s].pref+"help suggest"));
+					}
+					break;
+				case 'issue':
+					if(!f.nll(args[1])){
+						if(args[1].length>200){
+							message.channel.send(":warning: La description du problème ne peut pas être plus longue que 200 caractères.")
+						}else{
+							octokit.request('POST /repos/{owner}/{repo}/issues', {
+								owner: 'ADecametre',
+								repo: 'discordadam',
+								title: `[Bot] ${message.member.user.tag} (<@${message.member.id}>) - ${larg(1)}`,
+								labels: ['bug']
+							}).then(({ data }) => {
+								console.log(data);
+								message.channel.send(":white_check_mark: Problème envoyé.\nMerci de supporter le bot.");
+								let mess = new Discord.MessageEmbed()
+									.setColor('#99ff99')
+									.setAuthor(`${message.member.user.tag} (<@${message.member.id}>)`, message.author.displayAvatarURL({dynamic : true}))
+									.setTitle("Nouveau problème")
+									.setDescription(larg(1));
+								bot.users.cache.get(process.env.moderator).send(mess);
+							});
+						}
+					}else{
+						message.channel.send("<:info:725144790915743754> Veuillez décrire votre problème.\n\u200B \u200B \u200B "+f.mark(v[s].pref+"help issue"));
 					}
 					break;
 				case 'about':
@@ -545,25 +666,25 @@ bot.on('message', message=>{
 					if(nv[2]){ // avec ssv
 						fv = 2;
 						fv1 = 1;
-						query="SELECT * FROM `about` WHERE `id`='"+args[1]+"' AND STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ASC LIMIT 1";
+						query="SELECT `id`,`date`,`info_ext` AS `info` FROM `about` WHERE `id`='"+args[1]+"' AND STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ASC LIMIT 1";
 					}else if(nv[1]){ // avec sv
 						fv = 2;
 						fv1 = 0;
-						query="SELECT * FROM `about` WHERE `id` LIKE '"+args[1]+"%' AND STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ASC LIMIT 6";
+						query="SELECT `id`,`date`,`info` FROM `about` WHERE `id` LIKE '"+args[1]+"%' AND STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ASC LIMIT 6";
 					}else if(nv[0]){ // avec v
 						if(args[1] != "next"){
 							fv = 0;
 							fv1 = 1;
-							query="SELECT * FROM `about` WHERE `id` LIKE '"+args[1]+"%' AND `id` LIKE '%.0' AND STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ASC LIMIT 6";
+							query="SELECT `id`,`date`,`info` FROM `about` WHERE `id` LIKE '"+args[1]+"%' AND `id` LIKE '%.0' AND STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ASC LIMIT 6";
 						}else{
 							fv = 2;
 							fv1 = 1;
-							query="SELECT * FROM `about` WHERE STR_TO_DATE(`date`, '%d/%m/%y %H:%i')>=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ASC LIMIT 1";
+							query="SELECT `id`,`date`,`info_ext` AS `info` FROM `about` WHERE STR_TO_DATE(`date`, '%d/%m/%y %H:%i')>=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ASC LIMIT 1";
 						}
 					}else{ // avec rien
 						fv = 2;
 						fv1 = 0;
-						query = "SELECT * FROM `about` WHERE `id` LIKE CONCAT( SUBSTRING_INDEX( (SELECT `id` FROM `about` WHERE STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY `id` DESC LIMIT 1) ,'.',2), '%' ) AND STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY `id` ASC LIMIT 6";
+						query = "SELECT `id`,`date`,`info` FROM `about` WHERE `id` LIKE CONCAT( SUBSTRING_INDEX( (SELECT `id` FROM `about` WHERE STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY `id` DESC LIMIT 1) ,'.',2), '%' ) AND STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY `id` ASC LIMIT 6";
 						// query = "SELECT * FROM `about` WHERE STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY `id` DESC LIMIT 1";
 					}
 
@@ -612,7 +733,7 @@ bot.on('message', message=>{
 											.setColor('#99ff99')
 											.setTitle('Version ' + rows[0].id.substr(0, f.getPos(rows[0].id, '.', fv+fv1)) + " ‧ *" + d_form + "*")
 											.setURL()
-											.setAuthor(bot.username, null, 'http://a-decametre.tk')
+											.setAuthor(bot.username, null, 'http://a-decametre.tk/bot')
 											.setDescription(rows[0].info)
 											.setThumbnail(bot.displayAvatarURL({dynamic : true}))
 											/* .addFields(
@@ -674,7 +795,7 @@ bot.on('message', message=>{
 					let fields = larg(1).match(/{(.*)}|\[(.*?)\]/g).map(function(match) { return match.slice(1, -1); });
 					for(let x = 0 ; x < fields.length ; x++){
 						// if(fields[x].match(/(.*?)\|(.*)|(.*)/)){
-							fields[x]=fields[x].match(/(.*?)\|(.*)|(.*)/);
+							fields[x]=fields[x].match(/(.*?);;(.*)|(.*)/);
 						// }
 					}
 
@@ -788,7 +909,8 @@ bot.on('message', message=>{
 						if(mem){
 							let mess = new Discord.MessageEmbed()
 								.setColor('#99ff99')
-								.setTitle('Photo de profil de '+(mem.nickname || mem.user.username))
+								.setTitle((mem.nickname || mem.user.username))
+								.setDescription("Photo de profil")
 								.setImage(mem.user.displayAvatarURL({dynamic : true, size: 1024}));
 							message.channel.send(mess);
 						}else{
@@ -796,20 +918,24 @@ bot.on('message', message=>{
 						}
 					}
 					break;
+				case 'sync' :
+					sync();
+					message.react("✅");
+					break;
 			}
 		}
 	}
 });
 
 function sync() {
-	console.log("Synchronizing…");
 	i_sync();
 	v_sync();
 	bday_sync();
+	console.log("Synchronizing…");
 }
 
 function i_sync(){
-	f.sql("SELECT * from `interactions`")
+	f.sql("SELECT * from `interactions` WHERE `active`=1 AND `name` NOT LIKE '{!!%'")
 		.then(rows=>{
 			global.i=new Array;
 			for(let x = 0 ; x < rows.length ; x++){
@@ -872,6 +998,53 @@ function bday_sync() {
 }
 
 bot.on('ready', () =>{
-	console.log('Bot A-Decametre.tk prêt !');
+	function i_status_sync(){
+		f.sql("SELECT `message`,`author`,`send`,`dm`,`delay` from `interactions` WHERE `name`='{!!status}' AND `active`=1")
+			.then(rows=>{
+				// Randomise
+				let rands = ['message','author','send','dm'];
+				let r = false;
+				for(let x = 0 ; x < rands.length ; x++){
+					if(rows[0][rands[x]].split(";OR;").length > 1){
+						rands[x] = rows[0][rands[x]].split(";OR;")
+						r = true;
+					}else{
+						rands[x] = [rows[0][rands[x]]]
+					}
+				}
+				let delay = rows[0].delay;
+				if(rows[0].delay == 0){
+					delay = 10000;
+				}
+				//Status
+				if(!r){
+					bot.user.setPresence({
+						status: rands[0][0] || '',
+						activity: {
+							type: rands[1][0] || '',
+							name: rands[2][0] || '',
+							url: rands[3][0] || ''
+						}
+					});
+				}else{
+					setInterval(() => {
+						bot.user.setPresence({
+							status: rands[0][Math.floor(Math.random()*(rands[0].length))] || '',
+							activity: {
+								type: rands[1][Math.floor(Math.random()*(rands[1].length))] || '',
+								name: rands[2][Math.floor(Math.random()*(rands[2].length))] || '',
+								url: rands[3][Math.floor(Math.random()*(rands[3].length))] || ''
+							}
+						});
+					}, delay);
+				}
+				// bot.user.setStatus("dnd")
+				// bot.user.setActivity('Rien', { type: 'STREAMING', url: 'http://bit.ly/98K8eH' })
+			})
+	}
+	i_status_sync();
+	setInterval(i_status_sync, 10*60*1000);
+
+	console.log('Bot A-Decametre.tk prêt !\n');
 });
 bot.login(process.env.token);
