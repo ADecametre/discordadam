@@ -17,6 +17,7 @@
     "mysql": "2.18.1",
     "randomstring": "1.1.5",
     "request": "2.88.2",
-    "request-promise": "4.2.5"
+    "request-promise": "4.2.5",
+    "serp": "^2.1.0"
   }
 }

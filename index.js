@@ -8,6 +8,7 @@ const moment = require('moment-timezone');
 const momFormat = require("moment-duration-format");
 const { Octokit } = require("@octokit/rest");
 const octokit = new Octokit({auth:process.env.git_token,timeZone:"America/Toronto"});
+const serp = require("serp");
 
 sync();
 setInterval(sync, 10*60*1000);
@@ -20,7 +21,7 @@ bot.on('message', message=>{
 	if(!f.nll(v[s])){
 		let messages = [];
 		let cont = true;
-		let repl = str => str.replace(/<pref>/g,v[s].pref).replace(/<@bot>/g,process.env.bot).replace(/<@mod>/g,process.env.moderator).replace(/<@auth>/g,message.author.id);
+		let repl = str => str.replace(/<pref>/g,v[s].pref).replace(/<\\pref>/g,v[s].pref.replace(/(.)/g,'\\$1')).replace(/<@bot>/g,process.env.bot).replace(/<@mod>/g,process.env.moderator).replace(/<@auth>/g,message.author.id);
 		
 		// INTERACTIONS
 		for(let x = 0 ; x < i.length ; x++){
@@ -28,6 +29,12 @@ bot.on('message', message=>{
 			// Check server
 			if(i[x].server){
 				if(!( !i[x].server.split(" ").includes("-"+s) && (!i[x].server.split(" ").some(v => v > 0) || i[x].server.split(" ").includes(s)) )){
+					continue;
+				}
+			}
+			// Check channel
+			if(i[x].channel){
+				if(!( !i[x].channel.split(" ").includes("-"+message.channel.id) && (!i[x].channel.split(" ").some(v => v > 0) || i[x].channel.split(" ").includes(message.channel.id)) )){
 					continue;
 				}
 			}
@@ -49,41 +56,74 @@ bot.on('message', message=>{
 			}
 
 			// Check RegExp
-			if(!( message.content.match(RegExp(repl(i[x].message),"g")) && message.author.id.match(RegExp(repl(i[x].author),"g")) )){
+			if(!( message.content.match(RegExp(repl(i[x].message.replace(/<pref>/g,'<\\pref>')),"g")) && message.author.id.match(RegExp(repl(i[x].author),"g")) )){
 				continue;
 			}
 
 
-				// Send message
-				if(i[x].send){
-					// Reg Groups
-					let sends = repl(i[x].send);
-					let num_groups = (new RegExp(repl(i[x].message) + '|')).exec('').length - 1;
-					let groups = (new RegExp(repl(i[x].message))).exec(message.content)
-					for(let y = 1 ; y <= num_groups ; y++){
-						sends = sends.replace(new RegExp("\\$\\{"+y+"\\}","g"), groups[y] || "")
-					}
-					// Messages
-					sends = sends.split(";;;");
-					let msg = [];
-					for(let y = 0 ; y < sends.length ; y++){
-						// Randomise
-						if(sends[y].split(";OR;").length > 1){
-							msg[y] = sends[y].split(";OR;")[Math.floor(Math.random()*(sends[y].split(";OR;").length))]
-						}else{
-							msg[y] = sends[y]
+				// Select channel
+				let i_channel = message.channel;
+				if(i[x].tochannel){
+					i_channel = bot.channels.cache.get(i[x].tochannel);
+				}
+
+				if(i_channel){
+					// Send message
+					if(i[x].send){
+						// Reg Groups
+						let sends = repl(i[x].send);
+						let num_groups = (new RegExp(repl(i[x].message) + '|')).exec('').length - 1;
+						let groups = (new RegExp(repl(i[x].message))).exec(message.content)
+						for(let y = 1 ; y <= num_groups ; y++){
+							sends = sends.replace(new RegExp("\\$\\{"+y+"\\}","g"), groups[y] || "")
 						}
-						// Send (/Delete self)(Delay)
-						if(i[x].delete_self != null){
-							setTimeout(()=>message.channel.send(msg[y]).then(msg2=>setTimeout(()=>{msg2.delete()},i[x].delete_self)),i[x].delay)
-						}else{
-							setTimeout(()=>message.channel.send(msg[y]),i[x].delay)
+						// Messages
+						sends = sends.split(";;;");
+						let msg = [];
+						for(let y = 0 ; y < sends.length ; y++){
+							// Randomise
+							if(sends[y].split(";OR;").length > 1){
+								msg[y] = sends[y].split(";OR;")[Math.floor(Math.random()*(sends[y].split(";OR;").length))]
+							}else{
+								msg[y] = sends[y]
+							}
+							// Embed
+							if(msg[y].match(/embed{({.+})}/g)){
+								msg[y] = { embed: JSON.parse((/embed{({.+})}/g).exec(msg[y])[1]) };
+							}
+							// Send (/Delete self)(Delay)
+							if(i[x].delete_self != null){
+								setTimeout(()=>i_channel.send(msg[y]).then(msg2=>setTimeout(()=>{msg2.delete()},i[x].delete_self)),i[x].delay)
+							}else{
+								setTimeout(()=>i_channel.send(msg[y]),i[x].delay)
+							}
+						}
+					}
+					// Execute command
+					if(i[x].command){
+						// Reg Groups
+						let coms = repl(i[x].command);
+						let num_groups = (new RegExp(repl(i[x].message) + '|')).exec('').length - 1;
+						let groups = (new RegExp(repl(i[x].message))).exec(message.content)
+						for(let y = 1 ; y <= num_groups ; y++){
+							coms = coms.replace(new RegExp("\\$\\{"+y+"\\}","g"), groups[y] || "")
+						}
+						coms = coms.split(";;;");
+						for(let y = 0 ; y < coms.length ; y++){
+							messages.push({m:coms[y], c:i_channel});
 						}
 					}
 				}
 				// Direct message
 				if(i[x].dm){
-					let sends = i[x].dm.split(";;;");
+					// Reg Groups
+					let dms = repl(i[x].dm);
+					let num_groups = (new RegExp(repl(i[x].message) + '|')).exec('').length - 1;
+					let groups = (new RegExp(repl(i[x].message))).exec(message.content)
+					for(let y = 1 ; y <= num_groups ; y++){
+						dms = dms.replace(new RegExp("\\$\\{"+y+"\\}","g"), groups[y] || "")
+					}
+					let sends = dms.split(";;;");
 					let pmsg = []
 					let msg = [];
 					for(let y = 0 ; y < sends.length ; y++){
@@ -114,13 +154,6 @@ bot.on('message', message=>{
 						}
 					}
 				}
-				// Execute command
-				if(i[x].command){
-					let coms = i[x].command.split(";;;");
-					for(let y = 0 ; y < coms.length ; y++){
-						messages.push(repl(coms[y]));
-					}
-				}
 				// React
 				if(i[x].react){
 					let reacts = i[x].react.split(";");
@@ -138,12 +171,12 @@ bot.on('message', message=>{
 				}
 
 		}
-		if(cont){messages.push(message.content)}
+		if(cont){messages.push({m:message.content, c:message.channel})}
 		
 		for(let mnumber = 0 ; mnumber < messages.length ; mnumber++){
 			let args;
-			if(messages[mnumber].startsWith(v[s].pref)){
-				args = messages[mnumber].substring(v[s].pref.length).replace(/'/g, "\\'").split(" ");
+			if(messages[mnumber].m.startsWith(v[s].pref)){
+				args = messages[mnumber].m.substring(v[s].pref.length).replace(/'/g, "\\'").split(" ");
 			}else{
 				return;
 			}
@@ -157,6 +190,7 @@ bot.on('message', message=>{
 				}
 				return ret;
 			}
+			let c = messages[mnumber].c;
 			switch(args[0]){
 				case 'help':
 					let file = [new Discord.MessageAttachment('./images/help.png', 'help.png'), new Discord.MessageAttachment('./images/info_sm.png', 'info_sm.png')];
@@ -249,11 +283,11 @@ bot.on('message', message=>{
 											mess.addField(list,f.mark(ex,'*'))
 												.setTitle(title);
 
-											message.channel.send({ files: [file[0]], embed: mess });
+											c.send({ files: [file[0]], embed: mess });
 										})
 								}else{
 									mess.addField('\u200B', ':warning: La fonction '+f.mark(larg(1))+' n\'existe pas.\n\u200B \u200B \u200B <:help:726511256269226046> *`'+v[s].pref+'help`*')
-									message.channel.send({ files: [file[0]], embed: mess });
+									c.send({ files: [file[0]], embed: mess });
 								}
 							})
 					}else if(!f.nll(args[1])){
@@ -353,11 +387,11 @@ bot.on('message', message=>{
 											mess.addField(list,f.mark(ex,'*'))
 												.setTitle(title);
 
-											message.channel.send({ files: [file[0]], embed: mess });
+											c.send({ files: [file[0]], embed: mess });
 										})
 								}else{
 									mess.addField('\u200B', ':warning: La fonction '+f.mark(args[1])+' n\'existe pas.\n\u200B \u200B \u200B <:help:726511256269226046> *`'+v[s].pref+'help`*')
-									message.channel.send({ files: [file[0]], embed: mess });
+									c.send({ files: [file[0]], embed: mess });
 								}
 							})
 					}else{
@@ -401,7 +435,7 @@ bot.on('message', message=>{
 															mess.addField('\u200B','\u200B',true);
 														}
 														if(y == rows2.length-1 && x == rows.length-1){
-															message.channel.send({ files: [file[0]], embed: mess });
+															c.send({ files: [file[0]], embed: mess });
 														}
 													});
 											}
@@ -412,7 +446,7 @@ bot.on('message', message=>{
 					}
 					break;
 				case 'zoom':
-					if(!(s == 630090289951801356 || s == 700823351379361892)){message.channel.send("<:info:725144790915743754> Cette fonction n'est disponible que sur des serveurs sélectionnés.");break;}
+					if(!(s == 630090289951801356 || s == 700823351379361892)){c.send("<:info:725144790915743754> Cette fonction n'est disponible que sur des serveurs sélectionnés.");break;}
 
 					message.fetch({limit:1}).then(msg=>{ setTimeout(()=>{msg.delete();return;},10000); });
 					let d1 = moment().tz("America/Toronto").format("DD/MM/YY HH:mm");
@@ -444,11 +478,11 @@ bot.on('message', message=>{
 									for(var key1 in crs[key]){
 										embed.addField(key1, crs[key][key1], true);
 									}
-									message.channel.send({embed: embed})
+									c.send({embed: embed})
 									// console.log(crs);
 								};
 							}else{
-								message.channel.send("<:info:725144790915743754> Aucune conférence dans les 20 prochaines minutes.")
+								c.send("<:info:725144790915743754> Aucune conférence dans les 20 prochaines minutes.")
 							}
 						})
 					break;
@@ -459,71 +493,71 @@ bot.on('message', message=>{
 								case 'prefix':
 									if(!f.nll(args[2])){
 										if(larg(2).length>10){
-											message.channel.send(":warning: Le préfix ne peut pas être plus long que 10 caractères.")
+											c.send(":warning: Le préfix ne peut pas être plus long que 10 caractères.")
 										}else if( (' '+larg(2)+' ').match(/(```)|([^`]``[^`]+`[^`])|([^`]`[^`]+``[^`])|(\*[^*]*_)|(_[^*]*\*)/g) ){
-											message.channel.send(":warning: Préfixe invalide.")
+											c.send(":warning: Préfixe invalide.")
 										}else if(larg(2) == "default"){
 											f.sql("UPDATE `vars` SET `pref`=DEFAULT(`pref`) WHERE `server`='"+s+"'")
 												.then(() => {
 													f.sql("SELECT DEFAULT(`pref`) AS `default` FROM `vars`")
 														.then(rows => {
-															message.channel.send(":white_check_mark: Préfix changé à *`"+rows[0].default+"`*.");
+															c.send(":white_check_mark: Préfix changé à *`"+rows[0].default+"`*.");
 															global.v[s].pref=rows[0].default;
 														})
 												});
 										}else{
 											f.sql("UPDATE `vars` SET `pref`='"+larg(2)+"' WHERE `server`='"+s+"'")
 												.then(()=>{
-													message.channel.send(":white_check_mark: Préfix changé à "+f.mark(larg(2))+".");
+													c.send(":white_check_mark: Préfix changé à "+f.mark(larg(2))+".");
 													global.v[s].pref=larg(2);
 												});
 										}
 									}else{
-										message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set prefix"));
+										c.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set prefix"));
 									}
 									break;
 								case 'bday_hour':
-									if(!v[s].bday){message.channel.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
+									if(!v[s].bday){c.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
 									if(!f.nll(args[2])){
 										if(!larg(2).toString ().match (/^([01]\d|2[0-3])(:)([0-5]\d)$/)){
-											message.channel.send(":warning: Veuillez entrer l'heure sous le format `HH:MM` (24h).")
+											c.send(":warning: Veuillez entrer l'heure sous le format `HH:MM` (24h).")
 										}else{
 											f.sql("UPDATE `vars` SET `bday_hour`='"+larg(2)+"' WHERE `server`='"+s+"'")
 												.then(()=>{
-													message.channel.send(":white_check_mark: Heure d'anniversaire changée à *`"+larg(2)+"`*.");
+													c.send(":white_check_mark: Heure d'anniversaire changée à *`"+larg(2)+"`*.");
 													global.v[s].bday_hour=larg(2);
 												});
 										}
 									}else{
-										message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set bday_hour"));
+										c.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set bday_hour"));
 									}
 									break;
 								case 'bday_channel':
-									if(!v[s].bday){message.channel.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
+									if(!v[s].bday){c.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
 									if(!f.nll(args[2])){
 										if( message.guild.channels.cache.find(channel => channel.id == f.c_mention(args[2])[1]) ){
 											f.sql("UPDATE `vars` SET `bday_channel`='"+f.c_mention(args[2])[1]+"' WHERE `server`='"+s+"'")
 											.then(()=>{
-												message.channel.send(":white_check_mark: Salon changé à "+args[2]+".");
+												c.send(":white_check_mark: Salon changé à "+args[2]+".");
 												global.v[s].bday_channel=f.c_mention(args[2])[1];
 											});
 										}else if( message.guild.channels.cache.find(channel => channel.name == args[2]) ){
 											let ch = message.guild.channels.cache.find(channel => channel.name == args[2])
 											f.sql("UPDATE `vars` SET `bday_channel`='"+ch.id+"' WHERE `server`='"+s+"'")
 												.then(()=>{
-													message.channel.send(":white_check_mark: Salon changé à <#"+ch.id+">.");
+													c.send(":white_check_mark: Salon changé à <#"+ch.id+">.");
 													global.v[s].bday_channel=ch.id;
 												});
 										}else{
-											message.channel.send(":warning: Nom de salon invalide.")
+											c.send(":warning: Nom de salon invalide.")
 										}
 										
 									}else{
-										message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set bday_channel"));
+										c.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set bday_channel"));
 									}
 									break;
 								case 'bday_message':
-									if(!v[s].bday){message.channel.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
+									if(!v[s].bday){c.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
 									if(!f.nll(args[2])){
 										if(larg(2).length <= 500){
 											if(args[2] == "default"){
@@ -531,22 +565,22 @@ bot.on('message', message=>{
 													.then(()=>{
 														f.sql("SELECT DEFAULT(`bday_message`) AS `default` FROM `vars`")
 															.then(rows => {
-																message.channel.send(":white_check_mark: Message d'anniversaire modifié.");
+																c.send(":white_check_mark: Message d'anniversaire modifié.");
 																global.v[s].bday_message = rows[0].default;
 															});
 													});
 											}else{
 												f.sql("UPDATE `vars` SET `bday_message`='"+larg(2).replace(/'/g,"\\'")+"' WHERE `server`='"+s+"'")
 													.then(()=>{
-														message.channel.send(":white_check_mark: Message d'anniversaire modifié.");
+														c.send(":white_check_mark: Message d'anniversaire modifié.");
 														global.v[s].bday_message=larg(2);
 													});
 											}
 										}else{
-											message.channel.send(":warning: Le message ne peut pas être plus long que 500 caractères.")
+											c.send(":warning: Le message ne peut pas être plus long que 500 caractères.")
 										}
 									}else{
-										message.channel.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set bday_message"));
+										c.send("<:info:725144790915743754> Veuillez préciser la valeur du paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set bday_message"));
 									}
 									break;
 								case 'enable':
@@ -556,16 +590,16 @@ bot.on('message', message=>{
 												f.sql("UPDATE `vars` SET `"+args[2]+"` = 1 WHERE `server`='"+s+"'")
 													.then(() => {
 														v[s][args[2]] = 1;
-														message.channel.send(":white_check_mark: Fonction activée (*`"+args[2]+"`*).");
+														c.send(":white_check_mark: Fonction activée (*`"+args[2]+"`*).");
 													});
 											}else{
-												message.channel.send("<:info:725144790915743754> Cette fonction est déjà activée (*`"+args[2]+"`*).");
+												c.send("<:info:725144790915743754> Cette fonction est déjà activée (*`"+args[2]+"`*).");
 											}
 										}else{
-											message.channel.send(":warning: Cette fonction n'existe pas.")
+											c.send(":warning: Cette fonction n'existe pas.")
 										}
 									}else{
-										message.channel.send("<:info:725144790915743754> Veuillez préciser la fonction à activer.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set enable"));
+										c.send("<:info:725144790915743754> Veuillez préciser la fonction à activer.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set enable"));
 									}
 									break;
 								case 'disable':
@@ -575,32 +609,32 @@ bot.on('message', message=>{
 												f.sql("UPDATE `vars` SET `"+args[2]+"` = 0 WHERE `server`='"+s+"'")
 													.then(() => {
 														v[s][args[2]] = 0;
-														message.channel.send(":white_check_mark: Fonction désactivée (*`"+args[2]+"`*).");
+														c.send(":white_check_mark: Fonction désactivée (*`"+args[2]+"`*).");
 													});
 											}else{
-												message.channel.send("<:info:725144790915743754> Cette fonction est déjà désactivée (*`"+args[2]+"`*).");
+												c.send("<:info:725144790915743754> Cette fonction est déjà désactivée (*`"+args[2]+"`*).");
 											}
 										}else{
-											message.channel.send(":warning: Cette fonction n'existe pas.")
+											c.send(":warning: Cette fonction n'existe pas.")
 										}
 									}else{
-										message.channel.send("<:info:725144790915743754> Veuillez préciser la fonction à désactiver.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set disable"));
+										c.send("<:info:725144790915743754> Veuillez préciser la fonction à désactiver.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set disable"));
 									}
 									break;
 								default:
-									message.channel.send(":warning: Le paramètre "+f.mark(args[1])+" n'existe pas.\n\u200B \u200B \u200B <:help:726511256269226046>  "+f.mark(v[s].pref+"help set"));
+									c.send(":warning: Le paramètre "+f.mark(args[1])+" n'existe pas.\n\u200B \u200B \u200B <:help:726511256269226046>  "+f.mark(v[s].pref+"help set"));
 							}
 						}else{
-							message.channel.send("<:info:725144790915743754> Veuillez préciser le paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set"));
+							c.send("<:info:725144790915743754> Veuillez préciser le paramètre à modifier.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help set"));
 						}
 					}else{
-						message.channel.send(':warning: Vous n\'avez pas la permission de modifier les paramètres.');
+						c.send(':warning: Vous n\'avez pas la permission de modifier les paramètres.');
 					}
 					break;
 				case 'suggest':
 					if(!f.nll(args[1])){
 						if(args[1].length>200){
-							message.channel.send(":warning: La suggestion ne peut pas être plus longue que 200 caractères.")
+							c.send(":warning: La suggestion ne peut pas être plus longue que 200 caractères.")
 						}else{
 							octokit.request('POST /repos/{owner}/{repo}/issues', {
 								owner: 'ADecametre',
@@ -609,7 +643,7 @@ bot.on('message', message=>{
 								labels: ['enhancement']
 							}).then(({ data }) => {
 								console.log(data);
-								message.channel.send(":white_check_mark: Suggestion envoyée.\nMerci de supporter le bot.");
+								c.send(":white_check_mark: Suggestion envoyée.\nMerci de supporter le bot.");
 								let mess = new Discord.MessageEmbed()
 									.setColor('#99ff99')
 									.setAuthor(`${message.member.user.tag} (<@${message.member.id}>)`, message.author.displayAvatarURL({dynamic : true}))
@@ -619,13 +653,13 @@ bot.on('message', message=>{
 							});
 						}
 					}else{
-						message.channel.send("<:info:725144790915743754> Veuillez indiquer votre suggestion.\n\u200B \u200B \u200B "+f.mark(v[s].pref+"help suggest"));
+						c.send("<:info:725144790915743754> Veuillez indiquer votre suggestion.\n\u200B \u200B \u200B "+f.mark(v[s].pref+"help suggest"));
 					}
 					break;
 				case 'issue':
 					if(!f.nll(args[1])){
 						if(args[1].length>200){
-							message.channel.send(":warning: La description du problème ne peut pas être plus longue que 200 caractères.")
+							c.send(":warning: La description du problème ne peut pas être plus longue que 200 caractères.")
 						}else{
 							octokit.request('POST /repos/{owner}/{repo}/issues', {
 								owner: 'ADecametre',
@@ -634,7 +668,7 @@ bot.on('message', message=>{
 								labels: ['bug']
 							}).then(({ data }) => {
 								console.log(data);
-								message.channel.send(":white_check_mark: Problème envoyé.\nMerci de supporter le bot.");
+								c.send(":white_check_mark: Problème envoyé.\nMerci de supporter le bot.");
 								let mess = new Discord.MessageEmbed()
 									.setColor('#99ff99')
 									.setAuthor(`${message.member.user.tag} (<@${message.member.id}>)`, message.author.displayAvatarURL({dynamic : true}))
@@ -644,7 +678,7 @@ bot.on('message', message=>{
 							});
 						}
 					}else{
-						message.channel.send("<:info:725144790915743754> Veuillez décrire votre problème.\n\u200B \u200B \u200B "+f.mark(v[s].pref+"help issue"));
+						c.send("<:info:725144790915743754> Veuillez décrire votre problème.\n\u200B \u200B \u200B "+f.mark(v[s].pref+"help issue"));
 					}
 					break;
 				case 'about':
@@ -673,8 +707,8 @@ bot.on('message', message=>{
 						query="SELECT `id`,`date`,`info` FROM `about` WHERE `id` LIKE '"+args[1]+"%' AND STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ASC LIMIT 6";
 					}else if(nv[0]){ // avec v
 						if(args[1] != "next"){
-							fv = 0;
-							fv1 = 1;
+							fv = 1;
+							fv1 = 0;
 							query="SELECT `id`,`date`,`info` FROM `about` WHERE `id` LIKE '"+args[1]+"%' AND `id` LIKE '%.0' AND STR_TO_DATE(`date`, '%d/%m/%y %H:%i')<=STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ORDER BY STR_TO_DATE('"+d+"', '%d/%m/%y %H:%i') ASC LIMIT 6";
 						}else{
 							fv = 2;
@@ -691,7 +725,7 @@ bot.on('message', message=>{
 					f.sql(query)
 						.then( rows => {
 							if(!f.nll(rows) && rows.constructor !== Array){
-								message.channel.send(rows);
+								c.send(rows);
 							}else if(!f.nll(rows[0])){
 								bot.users.fetch(process.env.moderator).then(mod => {
 									bot.users.fetch(process.env.bot).then(bot => {
@@ -771,19 +805,19 @@ bot.on('message', message=>{
 											);
 										}
 
-										message.channel.send(mess);
+										c.send(mess);
 									});
 								});
 							}else{
-								message.channel.send(':warning: La version *`'+args[1]+'`* n\'existe pas.\n\u200B \u200B \u200B <:help:726511256269226046>  '+f.mark(v[s].pref+"help about"));
+								c.send(':warning: La version *`'+args[1]+'`* n\'existe pas.\n\u200B \u200B \u200B <:help:726511256269226046>  '+f.mark(v[s].pref+"help about"));
 							}
 						})
 						.catch(err => {
-							f.err_rep("about-req",err).then(value=>{message.channel.send(value);});
+							f.err_rep("about-req",err).then(value=>{c.send(value);});
 						});
 					break;
 				case 'poll':
-					if(!v[s][args[0]]){message.channel.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
+					if(!v[s][args[0]]){c.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
 					
 					message.fetch({limit:1}).then(msg=>{ setTimeout(()=>{msg.delete();return;},10000); });
 					let user = message.member.nickname || message.author.username;
@@ -792,19 +826,26 @@ bot.on('message', message=>{
 						.setColor('#99ff99')
 						.setAuthor(user+'\n', message.author.displayAvatarURL({dynamic : true}));
 					
-					let fields = larg(1).match(/{(.*)}|\[(.*?)\]/g).map(function(match) { return match.slice(1, -1); });
-					for(let x = 0 ; x < fields.length ; x++){
-						// if(fields[x].match(/(.*?)\|(.*)|(.*)/)){
-							fields[x]=fields[x].match(/(.*?);;(.*)|(.*)/);
-						// }
+					let fields;
+					if(larg(1).match(/{(.*)}|\[(.*?)\]/g)){
+						fields = larg(1).match(/{(.*)}|\[(.*?)\]/g).map(function(match) { return match.slice(1, -1); });
+						for(let x = 0 ; x < fields.length ; x++){
+							// if(fields[x].match(/(.*?)\|(.*)|(.*)/)){
+								fields[x]=fields[x].match(/(.*?);;(.*)|(.*)/);
+							// }
+						}
 					}
 
 					if(!larg(1).match(/{(.*)}/g) || fields.length < 3){
-						message.channel.send("<:info:725144790915743754> Veuillez indiquer un titre et au moins deux options.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help poll")).then(msg2=>setTimeout(()=>{msg2.delete()},5000));
+						c.send("<:info:725144790915743754> Veuillez indiquer un titre et au moins deux options.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help poll")).then(msg2=>setTimeout(()=>{msg2.delete()},5000));
 					}else if(fields.length > 21){
-						message.channel.send(":warning: Il ne peut pas y avoir plus de 20 options.").then(msg2=>setTimeout(()=>{msg2.delete()},5000));
-					}else if(fields.includes("")){
-						message.channel.send(":warning: Le titre et les options ne peuvent pas être vides.").then(msg2=>setTimeout(()=>{msg2.delete()},5000));
+						c.send(":warning: Il ne peut pas y avoir plus de 20 options.").then(msg2=>setTimeout(()=>{msg2.delete()},5000));
+					}else if(fields.some(r=>r.includes(""))){
+						c.send(":warning: Le titre et les options ne peuvent pas être vides.").then(msg2=>setTimeout(()=>{msg2.delete()},5000));
+					}else if(([...fields].sort((a, b)=>(b[1]||b[0]).length-(a[1]||a[0]).length)[0][1] || [...fields].sort((a, b)=>(b[1]||b[0]).length-(a[1]||a[0]).length)[0][0]).length > 256){
+						c.send(":warning: Le titre et les options ne peuvent pas être plus longues que 256 caractères.").then(msg2=>setTimeout(()=>{msg2.delete()},5000));
+					}else if(([...fields].sort((a, b)=>(b[2]||'').length-(a[2]||'').length)[0][2]||'').length > 1024){
+						c.send(":warning: Les descriptions ne peuvent pas être plus longues que 1024 caractères.").then(msg2=>setTimeout(()=>{msg2.delete()},5000));
 					}else{
 						let title = fields[0][1] || fields[0][0];
 						mess2.setTitle(title);
@@ -815,7 +856,7 @@ bot.on('message', message=>{
 							let desc = fields[x][2] || '\u200B';
 							mess2.addField(":regional_indicator_" + f.alph[x] + ": " + field, desc, true);
 							if(x == fields.length-1){
-								message.channel.send(mess2).then(sentEmbed => {
+								c.send(mess2).then(sentEmbed => {
 									for(y=1 ; y<=x ; y++){
 										sentEmbed.react(f.e_alph[y]);
 									}
@@ -824,8 +865,73 @@ bot.on('message', message=>{
 						}
 					}
 					break;
+				case 'strawpoll':
+					break;
+					if(!v[s][args[0]]){c.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
+					
+					message.fetch({limit:1}).then(msg=>{ setTimeout(()=>{msg.delete();return;},10000); });
+					let sp_user = message.member.nickname || message.author.username;
+					// let mem = message.guild.members.cache.find(member => member.id == message.author.id);
+					let sp_mess = new Discord.MessageEmbed()
+						.setColor('#99ff99')
+						.setAuthor(sp_user+'\n', message.author.displayAvatarURL({dynamic : true}));
+					
+					let sp_fields = larg(1).match(/{(.*)}|\[(.*?)\]/g).map(function(match) { return match.slice(1, -1); });
+					for(let x = 0 ; x < sp_fields.length ; x++){
+						// if(fields[x].match(/(.*?)\|(.*)|(.*)/)){
+							sp_fields[x]=sp_fields[x].match(/(.*?);;(.*)|(.*)/);
+						// }
+					}
+
+					if(!larg(1).match(/{(.*)}/g) || sp_fields.length < 3){
+						c.send("<:info:725144790915743754> Veuillez indiquer un titre et au moins deux options.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help poll")).then(msg2=>setTimeout(()=>{msg2.delete()},5000));
+					}else if(sp_fields.length > 21){
+						c.send(":warning: Il ne peut pas y avoir plus de 20 options.").then(msg2=>setTimeout(()=>{msg2.delete()},5000));
+					}else if(sp_fields.includes("")){
+						c.send(":warning: Le titre et les options ne peuvent pas être vides.").then(msg2=>setTimeout(()=>{msg2.delete()},5000));
+					}else if(([...sp_fields].sort((a, b)=>(b[1]||b[0]).length-(a[1]||a[0]).length)[0][1] || [...sp_fields].sort((a, b)=>(b[1]||b[0]).length-(a[1]||a[0]).length)[0][0]).length > 256){
+						c.send(":warning: Le titre et les options ne peuvent pas être plus longues que 256 caractères.").then(msg2=>setTimeout(()=>{msg2.delete()},5000));
+					}else if(([...sp_fields].sort((a, b)=>(b[2]||'').length-(a[2]||'').length)[0][2]||'').length > 1024){
+						c.send(":warning: Les descriptions ne peuvent pas être plus longues que 1024 caractères.").then(msg2=>setTimeout(()=>{msg2.delete()},5000));
+					}else if(!larg(1).replace(/({.*})|(\[.*?\])/g, '').match(/\b\d{10}\b/)){
+						c.send("<:info:725144790915743754> Veuillez indiquer la date de fin du sondage.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help poll")).then(msg2=>setTimeout(()=>{msg2.delete()},5000));
+					}else{
+						let title = sp_fields[0][1] || sp_fields[0][0];
+						sp_mess.setTitle(title);
+						if(sp_fields[0][2]){sp_mess.setDescription(sp_fields[0][2])}
+
+						//Date
+						let sp_date = (/\b(\d{10})-(\d{10})\b|\b(\d{10})\b/g).exec(larg(1).replace(/({.*})|(\[.*?\])/g, ''))
+						// console.log(sp_date);
+						// console.log(new Date((sp_date[3]||sp_date[2])*1000))
+						sp_mess.setTimestamp(new Date((sp_date[3]||sp_date[2])*1000));
+
+						//ID
+						let sp_id = (/\b(\w{5,10})\b/g).exec(larg(1).replace(/({.*})|(\[.*?\])/g, '').replace(sp_date[0], ''));
+						if(sp_id){
+							sp_id = sp_id[1];
+						}else{
+							sp_id = Math.random().toString(36).substring(6).toUpperCase()
+						}
+						// console.log(sp_id);
+						sp_mess.setFooter("Code • "+sp_id+"\nPour voter • "+v[s].pref+"vote "+sp_id+"\nExpiration")
+
+						for(let x = 1 ; x < sp_fields.length ; x++){
+							let sp_field = sp_fields[x][1] || sp_fields[x][0];
+							let sp_desc = sp_fields[x][2] || '\u200B';
+							sp_mess.addField(":regional_indicator_" + f.alph[x] + ": " + sp_field, sp_desc, true);
+							if(x == sp_fields.length-1){
+								c.send(sp_mess).then(sentEmbed => {
+									/* for(y=1 ; y<=x ; y++){
+										sentEmbed.react(f.e_alph[y]);
+									} */
+								});
+							}
+						}
+					}
+					break;
 				case 'bday':
-					if(!v[s][args[0]]){message.channel.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
+					if(!v[s][args[0]]){c.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
 					
 					if(!f.nll(v[s].bday_channel)){
 						if(!f.nll(args[1])){
@@ -846,16 +952,16 @@ bot.on('message', message=>{
 														f.sql("UPDATE `bday` SET `uid` = '"+mem.id+"', `server` = '"+message.guild.id+"', `date` = '"+args[2]+"', `done` = 0 WHERE `uid` = '"+mem.id+"' && `server`='"+s+"'")
 															.then(()=>{
 																nme = mem.nickname || mem.user.username; 
-																message.channel.send(":white_check_mark: Anniversaire modifié (*`"+nme+"`* - *`"+args[2]+"`*).");
+																c.send(":white_check_mark: Anniversaire modifié (*`"+nme+"`* - *`"+args[2]+"`*).");
 															});
 													}else{
-														message.channel.send(':warning: Vous n\'avez pas la permission de modifier l\'anniversaire.');
+														c.send(':warning: Vous n\'avez pas la permission de modifier l\'anniversaire.');
 													}
 												}else{
 													f.sql("INSERT INTO `bday` (`uid`, `server`, `date`, `done`) VALUES ('"+mem.id+"', '"+message.guild.id+"', '"+args[2]+"', 0);")
 														.then(()=>{
 															nme = mem.nickname || mem.user.username; 
-															message.channel.send(":white_check_mark: Anniversaire ajouté (*`"+nme+"`* - *`"+args[2]+"`*).");
+															c.send(":white_check_mark: Anniversaire ajouté (*`"+nme+"`* - *`"+args[2]+"`*).");
 														});
 												}
 											});
@@ -867,35 +973,35 @@ bot.on('message', message=>{
 														f.sql("DELETE FROM `bday` WHERE `uid` = '"+mem.id+"' && `server` = '"+s+"'")
 															.then(()=>{
 																nme = mem.nickname || mem.user.username; 
-																message.channel.send(":white_check_mark: Anniversaire supprimé (*`"+nme+"`*).");
+																c.send(":white_check_mark: Anniversaire supprimé (*`"+nme+"`*).");
 															});
 													}else{
-														message.channel.send(':warning: Vous n\'avez pas la permission de modifier l\'anniversaire.');
+														c.send(':warning: Vous n\'avez pas la permission de modifier l\'anniversaire.');
 													}
 												}else{
 													nme = mem.nickname || mem.user.username; 
-													message.channel.send("<:info:725144790915743754> Aucun anniversaire enregistré (*`"+nme+"`*).");
+													c.send("<:info:725144790915743754> Aucun anniversaire enregistré (*`"+nme+"`*).");
 												}
 											});
 										
 									}else{
-										message.channel.send(":warning: Veuillez indiquer votre date sous le format `JJ/MM` ou `JJ/MM/AAAA`.");
+										c.send(":warning: Veuillez indiquer votre date sous le format `JJ/MM` ou `JJ/MM/AAAA`.");
 									}
 								}else{
-									message.channel.send(":warning: Nom d'utilisateur incorrect.");
+									c.send(":warning: Nom d'utilisateur incorrect.");
 								}
 							}else{
-								message.channel.send("<:info:725144790915743754> Veuillez préciser la date de naissance.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help bday"));
+								c.send("<:info:725144790915743754> Veuillez préciser la date de naissance.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help bday"));
 							}
 						}else{
-							message.channel.send("<:info:725144790915743754> Veuillez préciser l'utilisateur ou la date de naissance.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help bday"));
+							c.send("<:info:725144790915743754> Veuillez préciser l'utilisateur ou la date de naissance.\n\u200B \u200B \u200B <:help:726511256269226046> "+f.mark(v[s].pref+"help bday"));
 						}
 					}else{
-						message.channel.send("<:info:725144790915743754> Aucun salon d'affichage défini par les modérateurs.\n\u200B \u200B \u200B <:help:726511256269226046>  "+f.mark(v[s].pref+"help set bday_channel"));
+						c.send("<:info:725144790915743754> Aucun salon d'affichage défini par les modérateurs.\n\u200B \u200B \u200B <:help:726511256269226046>  "+f.mark(v[s].pref+"help set bday_channel"));
 					}
 					break;
 				case 'pfp' :
-					if(!v[s][args[0]]){message.channel.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
+					if(!v[s][args[0]]){c.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
 
 					if(f.nll(args[1])){
 						let mess = new Discord.MessageEmbed()
@@ -903,7 +1009,7 @@ bot.on('message', message=>{
 							.setTitle((message.guild.members.cache.find(member => member.id == message.author.id).displayName || message.author.username))
 							.setDescription("Photo de profil")
 							.setImage(message.author.displayAvatarURL({dynamic : true, size: 1024}));
-						message.channel.send(mess);
+						c.send(mess);
 					}else{
 						let mem = message.guild.members.cache.find(member => member.id == f.u_mention(args[1])[1] || member.user.username == larg(1) /* args[1].replace(/([^\\])(_)/g,'$1 ').replace(/\\/g,'') */ || member.nickname == larg(1) /* args[1].replace(/([^\\])(_)/g,'$1 ').replace(/\\/g,'') */) || null;
 						if(mem){
@@ -912,11 +1018,104 @@ bot.on('message', message=>{
 								.setTitle((mem.nickname || mem.user.username))
 								.setDescription("Photo de profil")
 								.setImage(mem.user.displayAvatarURL({dynamic : true, size: 1024}));
-							message.channel.send(mess);
+							c.send(mess);
 						}else{
-							message.channel.send(":warning: Nom d'utilisateur incorrect.");
+							c.send(":warning: Nom d'utilisateur incorrect.");
 						}
 					}
+					break;
+				case 'google' :
+					if(!v[s][args[0]]){c.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
+					if(!args[1]){c.send("<:info:725144790915743754> Veuillez indiquer votre recherche.\n\u200B \u200B \u200B "+f.mark(v[s].pref+"help google"));break;}
+
+					const embed = new Discord.MessageEmbed()
+					.setColor('#99ff99')
+					.setTitle(larg(1) + ' - Recherche Google')
+					.setURL('https://www.google.com/search?q='+encodeURIComponent(larg(1)))
+					.setThumbnail('https://assets.stickpng.com/thumbs/5847f9cbcef1014c0b5e48c8.png')
+
+					let err = true;
+
+					var options = {host : "google.com", numberOfResults : true, qs : {q : larg(1), filter : 0, pws : 0}, num : 10, retry : 3};
+					let links1 = serp.search(options)
+					links1.then(()=>{
+						Promise.all([links1]).then(results=>{
+							embed.setFooter("Environ "+results[0]+" résultats");
+						})
+					}).catch(e=>{if(err){err=false;c.send(":warning: Une erreur s'est produite.\nRéessayez plus tard ou signalez ce bugue ("+f.mark(v[s].pref+"issue google")+")."); console.error("UNE ERREUR S'EST PRODUITE\n"+e);}});
+
+					var options = {host : "google.com", qs : {q : larg(1), filter : 0, pws : 0}, num : 10, retry : 3};
+					let links2 = serp.search(options)
+					links2.then(()=>{
+						Promise.all([links2]).then(results=>{
+							let desc = '';
+							for(let x = 0; x < results[0].length; x++){
+								desc+='['+results[0][x].title+']('+results[0][x].url+')\n'
+							}
+							embed.setDescription((desc || "Aucun résultat\n")+"\n[+](https://www.google.com/url?q="+encodeURIComponent(larg(1))+"&sa=t&%75%72%6C=%68%74tp%73%3A%2F%2F%79%6F%75%74%75%62%65.%63%6F%6D%2Fw%61%74%63%68%2FoHg5SJYRHA0)");
+
+							links1.then(()=>{
+								links2.then(()=>{
+									c.send(embed);
+								}).catch(e=>{if(err){err=false;c.send(":warning: Une erreur s'est produite.\nRéessayez plus tard ou signalez ce bugue ("+f.mark(v[s].pref+"issue google")+")."); console.error("UNE ERREUR S'EST PRODUITE\n"+e);}});
+							}).catch(e=>{if(err){err=false;c.send(":warning: Une erreur s'est produite.\nRéessayez plus tard ou signalez ce bugue ("+f.mark(v[s].pref+"issue google")+")."); console.error("UNE ERREUR S'EST PRODUITE\n"+e);}});		
+
+						})
+					}).catch(e=>{if(err){err=false;c.send(":warning: Une erreur s'est produite.\nRéessayez plus tard ou signalez ce bugue ("+f.mark(v[s].pref+"issue google")+")."); console.error("UNE ERREUR S'EST PRODUITE\n"+e);}});
+					/* links1.then(()=>{
+						links2.then(()=>{
+							c.send(embed);
+						}).catch(e=>{if(err){err=false;c.send(":warning: Une erreur s'est produite.\nRéessayez plus tard ou signalez ce bugue ("+f.mark(v[s].pref+"issue google")+")."); console.error("UNE ERREUR S'EST PRODUITE\n"+e);}});
+					}).catch(e=>{if(err){err=false;c.send(":warning: Une erreur s'est produite.\nRéessayez plus tard ou signalez ce bugue ("+f.mark(v[s].pref+"issue google")+")."); console.error("UNE ERREUR S'EST PRODUITE\n"+e);}});
+					 */break;
+				case 'calc' :
+					if(!v[s][args[0]]){c.send("<:info:725144790915743754> Cette fonction a été désactivée.");break;}
+					if(!larg(1)){c.send("<:info:725144790915743754> Veuillez indiquer votre calcul.\n\u200B \u200B \u200B "+f.mark(v[s].pref+"help calc"));break;}
+
+					const par_analyse = (str,st)=>{
+						str = str.substring(st).replace(/[^\(\)]/g,' ');
+						for(let x = (str.match(/\(/g) || []).length; x > 1; x--){
+							str = str.replace(/(.+)\(([^\(\)]+)\)/g,'$1 $2 ')
+						}
+						return st+str.indexOf(")")
+					}
+					
+					const calc = c=>{
+						// old da_regex = /^((sqrt|([rdg]-)*a*(sin|cos|tan))*\()*-*(\d+(.\d+)*|PI|E)(((\+|\-|\*{1,2}|\/)|(\+|\-|\*{1,2}|\/)((sqrt|([rdg]-)*a*(sin|cos|tan))*\()+|\)+(\+|\-|\*{1,2}|\/))-*(\d+(.\d+)*|PI|E))*\)*$/
+						da_regex = /^((sqrt|([rdg]-)?a?(sin|cos|tan))*\()*-*(\d+(\.\d+)?|PI|E)((\)*(\+|\-|\*{1,2}|\/)((sqrt|([rdg]-)?a?(sin|cos|tan))*\()*)-?(\d+(\.\d+)?|PI|E))*\)*$/
+						let rep = c;
+						for(let x = (rep.match(/([dg])-(sin|cos|tan)\(/g) || []).length; x > 0; x--){
+							rep_ind = par_analyse(rep,rep.search(/([dg])-(sin|cos|tan)\(/)+5);
+							rep = (rep.substring(0,rep_ind)+')'+rep.substring(rep_ind)).replace(/([dg])-(sin|cos|tan)\(/, '$1$2(');  
+						}
+						rep = rep
+							.replace(/r-(sin|cos|tan)\(/g,'$1(')
+							.replace(/d(sin|cos|tan)\(/g,'$1(PI/180*(')
+							.replace(/g(sin|cos|tan)\(/g,'$1(PI/200*(')
+							.replace(/r-(asin|acos|atan)\(/g,'$1(')
+							.replace(/d-(asin|acos|atan)\(/g,'180/PI*$1(')
+							.replace(/g-(asin|acos|atan)\(/g,'180/PI*$1(')
+							.replace(/([A-Za-z]+)/g,'Math.$1')
+							.replace(/[\s\r\n]+/g, '')
+						// console.log('return parseFloat(('+rep+').toFixed(10))')
+						let answer;
+						if((c.replace(/[\s\r\n]+/g, '').match(da_regex)) && (c.match(/\(/g) || []).length==(c.match(/\)/g) || []).length && !(new Function('return isNaN(' + rep + ')')())){
+							answer = new Function('return parseFloat((' + rep + ').toFixed(10))')();
+						}else{
+							answer = "NaN";
+						}
+						return answer;
+					}
+
+					// SEND
+					let calc_user = message.member.nickname || message.author.username;
+					// let mem = message.guild.members.cache.find(member => member.id == message.author.id);
+					let calc_mess = new Discord.MessageEmbed()
+						.setColor('#99ff99')
+						.setAuthor(calc_user+'\n', message.author.displayAvatarURL({dynamic : true}))
+						.setTitle("= "+calc(larg(1)))
+						.setDescription("`"+larg(1)+"`")
+					c.send(calc_mess);
 					break;
 				case 'sync' :
 					sync();
@@ -998,7 +1197,7 @@ function bday_sync() {
 }
 
 bot.on('ready', () =>{
-	function i_status_sync(){
+	function i_status_sync(duration){
 		f.sql("SELECT `message`,`author`,`send`,`dm`,`delay` from `interactions` WHERE `name`='{!!status}' AND `active`=1")
 			.then(rows=>{
 				// Randomise
@@ -1027,7 +1226,7 @@ bot.on('ready', () =>{
 						}
 					});
 				}else{
-					setInterval(() => {
+					let delay_interval = setInterval(() => {
 						bot.user.setPresence({
 							status: rands[0][Math.floor(Math.random()*(rands[0].length))] || '',
 							activity: {
@@ -1037,13 +1236,17 @@ bot.on('ready', () =>{
 							}
 						});
 					}, delay);
+					setTimeout(() => {
+						clearInterval(delay_interval);
+					}, duration);
 				}
 				// bot.user.setStatus("dnd")
 				// bot.user.setActivity('Rien', { type: 'STREAMING', url: 'http://bit.ly/98K8eH' })
 			})
 	}
-	i_status_sync();
-	setInterval(i_status_sync, 10*60*1000);
+	let interv = 10*60*1000;
+	i_status_sync(interv);
+	setInterval(()=>{i_status_sync(interv)}, interv);
 
 	console.log('Bot A-Decametre.tk prêt !\n');
 });
